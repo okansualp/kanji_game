@@ -73,14 +73,16 @@ function App() {
   const createSections = () => {
     const sections = [];
     let kanjiCount = 0;
+    let normalSectionCount = 0;
 
     kanjiData.forEach((kanji, index) => {
       kanjiCount++;
+      normalSectionCount++;
       
       sections.push({
         type: 'kanji',
         id: `kanji-${index}`,
-        title: `Bölüm ${sections.length + 1}`,
+        title: `Bölüm ${normalSectionCount}`,
         kanji: kanji,
         words: kanji.vocabulary ? kanji.vocabulary.map(v => ({ ...v, kanji: kanji.kanji })) : []
       });
@@ -98,7 +100,8 @@ function App() {
         sections.push({
           type: 'mini-boss',
           id: `mini-boss-${kanjiCount / 10}`,
-          title: `🔥 Mini Boss ${kanjiCount / 10}`,
+          title: `🔥 Mini Boss: Son 10 Kanji`,
+          subtitle: `Kanji ${kanjiCount - 9} - ${kanjiCount}`,
           kanjiList: bossKanji,
           words: bossWords
         });
@@ -117,7 +120,8 @@ function App() {
         sections.push({
           type: 'big-boss',
           id: `big-boss-${kanjiCount / 50}`,
-          title: `👹 Büyük Boss ${kanjiCount / 50}`,
+          title: `👹 Büyük Boss: Son 50 Kanji`,
+          subtitle: `Kanji ${kanjiCount - 49} - ${kanjiCount}`,
           kanjiList: bossKanji,
           words: bossWords
         });
@@ -440,6 +444,9 @@ function App() {
                         {section.type === 'kanji' && section.kanji.kanji}
                       </span>
                     </div>
+                    {section.subtitle && (
+                      <div className="block-subtitle">{section.subtitle}</div>
+                    )}
                     
                     {section.type === 'kanji' ? (
                       <>

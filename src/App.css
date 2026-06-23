@@ -264,6 +264,13 @@ body {
   font-weight: bold;
 }
 
+.block-subtitle {
+  font-size: 14px;
+  color: #aaa;
+  margin-bottom: 15px;
+  font-weight: 500;
+}
+
 .block-kanji {
   display: flex;
   flex-wrap: wrap;

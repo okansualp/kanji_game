@@ -384,6 +384,39 @@ function App() {
     return { completed: completedWords, total: totalWords };
   };
 
+  // Get all words with 2+ mistakes
+  const getReviewWords = () => {
+    const reviewWords = [];
+    sections.forEach(section => {
+      section.words.forEach(word => {
+        const key = `${word.kanji}-${word.word}`;
+        const wordProgress = progress[key];
+        if (wordProgress) {
+          const mistakes = wordProgress.attempts - wordProgress.correct;
+          if (mistakes >= 2) {
+            reviewWords.push(word);
+          }
+        }
+      });
+    });
+    return reviewWords;
+  };
+
+  // Start review mode
+  const startReviewMode = () => {
+    const reviewWords = getReviewWords();
+    if (reviewWords.length === 0) {
+      alert('Henüz 2 veya daha fazla hata yaptığınız kelime yok! 🎉');
+      return;
+    }
+    
+    const quizWords = [...reviewWords].sort(() => Math.random() - 0.5);
+    setCurrentQuiz(quizWords);
+    setQuizIndex(0);
+    startQuestion(quizWords[0]);
+    setScreen('quiz');
+  };
+
   const totalStats = getTotalStats();
 
   return (
@@ -458,6 +491,19 @@ function App() {
                 Yazma
               </button>
             </div>
+          </div>
+
+          {/* Review Mode Button */}
+          <div className="section">
+            <button 
+              className="review-mode-btn"
+              onClick={() => startReviewMode()}
+            >
+              🎯 Hata Yaptığım Kelimeleri Tekrarla
+              <span className="review-count">
+                ({getReviewWords().length} kelime)
+              </span>
+            </button>
           </div>
 
           <div className="section">

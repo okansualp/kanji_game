@@ -201,6 +201,34 @@ body {
   color: #c9a962;
 }
 
+.review-mode-btn {
+  width: 100%;
+  padding: 20px;
+  font-size: 20px;
+  background: linear-gradient(135deg, #ff9800 0%, #f44336 100%);
+  border: none;
+  border-radius: 12px;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.review-mode-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(255, 152, 0, 0.4);
+}
+
+.review-count {
+  font-size: 14px;
+  opacity: 0.9;
+  font-weight: normal;
+}
+
 .blocks-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));

@@ -556,12 +556,9 @@ function App() {
                         className="group-header"
                         onClick={() => toggleGroup(group.letter)}
                       >
-                        <div className="group-info">
-                          <span className="group-letter">{group.letter}</span>
-                          <span className="group-title">
-                            Kanji {group.startKanji} - {group.endKanji}
-                          </span>
-                        </div>
+                        <span className="group-title">
+                          Kanji {group.startKanji} - {group.endKanji}
+                        </span>
                         <span className={`group-arrow ${isExpanded ? 'expanded' : ''}`}>
                           ▼
                         </span>

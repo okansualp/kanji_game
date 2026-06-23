@@ -15,11 +15,24 @@ function App() {
   const [quizMode, setQuizMode] = useState('reading');
   const [selectedKanji, setSelectedKanji] = useState(null);
   const [progress, setProgress] = useState(() => {
-    const saved = localStorage.getItem('kanji_progress');
-    return saved ? JSON.parse(saved) : {};
+    try {
+      const saved = localStorage.getItem('kanji_progress');
+      console.log('Yüklenen progress:', saved);
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      console.error('Progress yükleme hatası:', e);
+      return {};
+    }
   });
 
-  // Yeni bölümleme sistemi oluştur
+  useEffect(() => {
+    try {
+      console.log('Kaydedilen progress:', progress);
+      localStorage.setItem('kanji_progress', JSON.stringify(progress));
+    } catch (e) {
+      console.error('Progress kaydetme hatası:', e);
+    }
+  }, [progress]);
   const createSections = () => {
     const sections = [];
     let kanjiCount = 0;

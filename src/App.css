@@ -558,3 +558,84 @@ body {
   background: #dab86f;
   transform: translateY(-2px);
 }
+
+.group-card {
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.group-card:hover {
+  border-color: #444;
+}
+
+.group-header {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 20px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: white;
+  transition: background 0.3s ease;
+}
+
+.group-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.group-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.group-letter {
+  font-size: 32px;
+  font-weight: bold;
+  color: #c9a962;
+  background: rgba(201, 169, 98, 0.1);
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+
+.group-title {
+  font-size: 20px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.group-arrow {
+  font-size: 24px;
+  color: #888;
+  transition: transform 0.3s ease;
+}
+
+.group-arrow.expanded {
+  transform: rotate(180deg);
+}
+
+.group-content {
+  padding: 0 20px 20px 20px;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

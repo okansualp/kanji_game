@@ -23,6 +23,7 @@ function App() {
   const [quizMode, setQuizMode] = useState('reading');
   const [selectedKanji, setSelectedKanji] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedGroups, setExpandedGroups] = useState(['A']); // Varsayılan olarak A grubu açık
   const [lastSectionIndex, setLastSectionIndex] = useState(() => {
     try {
       const saved = localStorage.getItem('kanji_last_section');
@@ -61,10 +62,6 @@ function App() {
       console.error('Progress kaydetme hatası:', e);
     }
   }, [progress]);
-
-  useEffect(() => {
-    localStorage.setItem('kanji_last_screen', JSON.stringify(screen));
-  }, [screen]);
 
   useEffect(() => {
     localStorage.setItem('kanji_selected_mode', JSON.stringify(selectedMode));
@@ -132,6 +129,56 @@ function App() {
   };
 
   const sections = createSections();
+
+  // Bölümleri 50'lik gruplara ayır
+  const groupSections = () => {
+    const groups = [];
+    let currentGroup = [];
+    let currentGroupLetter = 'A';
+    let groupStartKanji = 1;
+
+    sections.forEach((section, index) => {
+      if (section.type === 'big-boss') {
+        // Büyük boss'tan sonra yeni grup başlat
+        currentGroup.push(section);
+        groups.push({
+          letter: currentGroupLetter,
+          startKanji: groupStartKanji,
+          endKanji: groupStartKanji + 49,
+          sections: [...currentGroup]
+        });
+        currentGroup = [];
+        currentGroupLetter = String.fromCharCode(currentGroupLetter.charCodeAt(0) + 1);
+        groupStartKanji += 50;
+      } else {
+        currentGroup.push(section);
+      }
+    });
+
+    // Son kalan bölümleri ekle
+    if (currentGroup.length > 0) {
+      groups.push({
+        letter: currentGroupLetter,
+        startKanji: groupStartKanji,
+        endKanji: Math.min(groupStartKanji + 49, kanjiData.length),
+        sections: currentGroup
+      });
+    }
+
+    return groups;
+  };
+
+  const groups = groupSections();
+
+  const toggleGroup = (letter) => {
+    setExpandedGroups(prev => {
+      if (prev.includes(letter)) {
+        return prev.filter(l => l !== letter);
+      } else {
+        return [...prev, letter];
+      }
+    });
+  };
 
   const filteredSections = sections.filter(section => {
     if (!searchQuery) return true;
@@ -347,7 +394,7 @@ function App() {
             <h1 className="title">漢字クイズ</h1>
             <p className="subtitle">Vault Quiz</p>
             <div className="header-info">
-              <span>{sections.length} bölüm • {kanjiData.length} kanji</span>
+              <span>{kanjiData.length} kanji • {groups.length} grup</span>
             </div>
           </header>
 
@@ -426,76 +473,179 @@ function App() {
               </div>
             </div>
             
-            <div className="blocks-grid">
-              {filteredSections.map((section, sectionIndex) => {
-                const originalIndex = sections.indexOf(section);
-                const sectionProgress = getSectionProgress(section);
-                return (
-                  <div 
-                    key={sectionIndex} 
-                    className={`block-card ${section.type}`}
-                    onClick={() => startQuiz(section, originalIndex)}
-                  >
-                    <div className="block-header">
-                      <h4 className="block-title">{section.title}</h4>
-                      <span className="block-status">
-                        {section.type === 'mini-boss' && '🔥 Mini Boss'}
-                        {section.type === 'big-boss' && '👹 Büyük Boss'}
-                        {section.type === 'kanji' && section.kanji.kanji}
-                      </span>
-                    </div>
-                    {section.subtitle && (
-                      <div className="block-subtitle">{section.subtitle}</div>
-                    )}
-                    
-                    {section.type === 'kanji' ? (
-                      <>
-                        <div className="block-kanji single">
-                          <span 
-                            className="mini-kanji large"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              goToKanjiDetail(section.kanji);
-                            }}
-                          >
-                            {section.kanji.kanji}
-                          </span>
-                        </div>
-                        <div className="vocab-preview">
-                          {section.words.slice(0, 2).map((w, i) => (
-                            <div key={i} className="vocab-preview-item">
-                              {w.word}
-                            </div>
-                          ))}
-                          {section.words.length > 2 && (
-                            <div className="vocab-preview-more">+{section.words.length - 2} daha</div>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="boss-kanji-list">
-                        {section.kanjiList.map((k, i) => (
-                          <span 
-                            key={i} 
-                            className="mini-kanji"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              goToKanjiDetail(k);
-                            }}
-                          >
-                            {k.kanji}
-                          </span>
-                        ))}
+            {searchQuery ? (
+              // Arama varsa tüm sonuçları göster
+              <div className="blocks-grid">
+                {filteredSections.map((section, sectionIndex) => {
+                  const originalIndex = sections.indexOf(section);
+                  const sectionProgress = getSectionProgress(section);
+                  return (
+                    <div 
+                      key={sectionIndex} 
+                      className={`block-card ${section.type}`}
+                      onClick={() => startQuiz(section, originalIndex)}
+                    >
+                      <div className="block-header">
+                        <h4 className="block-title">{section.title}</h4>
+                        <span className="block-status">
+                          {section.type === 'mini-boss' && '🔥 Mini Boss'}
+                          {section.type === 'big-boss' && '👹 Büyük Boss'}
+                          {section.type === 'kanji' && section.kanji.kanji}
+                        </span>
                       </div>
-                    )}
-                    
-                    <div className="block-progress">
-                      {sectionProgress.completed}/{sectionProgress.total} kelime • %{sectionProgress.percentage}
+                      {section.subtitle && (
+                        <div className="block-subtitle">{section.subtitle}</div>
+                      )}
+                      
+                      {section.type === 'kanji' ? (
+                        <>
+                          <div className="block-kanji single">
+                            <span 
+                              className="mini-kanji large"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                goToKanjiDetail(section.kanji);
+                              }}
+                            >
+                              {section.kanji.kanji}
+                            </span>
+                          </div>
+                          <div className="vocab-preview">
+                            {section.words.slice(0, 2).map((w, i) => (
+                              <div key={i} className="vocab-preview-item">
+                                {w.word}
+                              </div>
+                            ))}
+                            {section.words.length > 2 && (
+                              <div className="vocab-preview-more">+{section.words.length - 2} daha</div>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="boss-kanji-list">
+                          {section.kanjiList.map((k, i) => (
+                            <span 
+                              key={i} 
+                              className="mini-kanji"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                goToKanjiDetail(k);
+                              }}
+                            >
+                              {k.kanji}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <div className="block-progress">
+                        {sectionProgress.completed}/{sectionProgress.total} kelime • %{sectionProgress.percentage}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              // Arama yoksa gruplandırılmış görünüm
+              <div className="groups-container">
+                {groups.map((group, groupIndex) => {
+                  const isExpanded = expandedGroups.includes(group.letter);
+                  return (
+                    <div key={groupIndex} className="group-card">
+                      <button 
+                        className="group-header"
+                        onClick={() => toggleGroup(group.letter)}
+                      >
+                        <div className="group-info">
+                          <span className="group-letter">{group.letter}</span>
+                          <span className="group-title">
+                            Grup {group.letter}: Kanji {group.startKanji} - {group.endKanji}
+                          </span>
+                        </div>
+                        <span className={`group-arrow ${isExpanded ? 'expanded' : ''}`}>
+                          ▼
+                        </span>
+                      </button>
+                      
+                      {isExpanded && (
+                        <div className="group-content">
+                          <div className="blocks-grid">
+                            {group.sections.map((section, sectionIndex) => {
+                              const originalIndex = sections.indexOf(section);
+                              const sectionProgress = getSectionProgress(section);
+                              return (
+                                <div 
+                                  key={sectionIndex} 
+                                  className={`block-card ${section.type}`}
+                                  onClick={() => startQuiz(section, originalIndex)}
+                                >
+                                  <div className="block-header">
+                                    <h4 className="block-title">{section.title}</h4>
+                                    <span className="block-status">
+                                      {section.type === 'mini-boss' && '🔥 Mini Boss'}
+                                      {section.type === 'big-boss' && '👹 Büyük Boss'}
+                                      {section.type === 'kanji' && section.kanji.kanji}
+                                    </span>
+                                  </div>
+                                  {section.subtitle && (
+                                    <div className="block-subtitle">{section.subtitle}</div>
+                                  )}
+                                  
+                                  {section.type === 'kanji' ? (
+                                    <>
+                                      <div className="block-kanji single">
+                                        <span 
+                                          className="mini-kanji large"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            goToKanjiDetail(section.kanji);
+                                          }}
+                                        >
+                                          {section.kanji.kanji}
+                                        </span>
+                                      </div>
+                                      <div className="vocab-preview">
+                                        {section.words.slice(0, 2).map((w, i) => (
+                                          <div key={i} className="vocab-preview-item">
+                                            {w.word}
+                                          </div>
+                                        ))}
+                                        {section.words.length > 2 && (
+                                          <div className="vocab-preview-more">+{section.words.length - 2} daha</div>
+                                        )}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="boss-kanji-list">
+                                      {section.kanjiList.map((k, i) => (
+                                        <span 
+                                          key={i} 
+                                          className="mini-kanji"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            goToKanjiDetail(k);
+                                          }}
+                                        >
+                                          {k.kanji}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  
+                                  <div className="block-progress">
+                                    {sectionProgress.completed}/{sectionProgress.total} kelime • %{sectionProgress.percentage}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

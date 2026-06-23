@@ -1,0 +1,16 @@
+{
+  "name": "Kanji Quiz",
+  "short_name": "Kanji",
+  "description": "Kanji öğrenme uygulaması",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

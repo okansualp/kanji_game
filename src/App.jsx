@@ -33,6 +33,7 @@ function App() {
       console.error('Progress kaydetme hatası:', e);
     }
   }, [progress]);
+
   const createSections = () => {
     const sections = [];
     let kanjiCount = 0;
@@ -40,7 +41,6 @@ function App() {
     kanjiData.forEach((kanji, index) => {
       kanjiCount++;
       
-      // Her kanji için ayrı bölüm
       sections.push({
         type: 'kanji',
         id: `kanji-${index}`,
@@ -49,7 +49,6 @@ function App() {
         words: kanji.vocabulary ? kanji.vocabulary.map(v => ({ ...v, kanji: kanji.kanji })) : []
       });
 
-      // Her 10 kanji sonrası mini boss
       if (kanjiCount % 10 === 0 && kanjiCount > 0) {
         const startIndex = Math.max(0, kanjiCount - 10);
         const bossKanji = kanjiData.slice(startIndex, kanjiCount);
@@ -69,7 +68,6 @@ function App() {
         });
       }
 
-      // Her 50 kanji sonrası büyük boss
       if (kanjiCount % 50 === 0 && kanjiCount > 0) {
         const startIndex = Math.max(0, kanjiCount - 50);
         const bossKanji = kanjiData.slice(startIndex, kanjiCount);
@@ -95,12 +93,16 @@ function App() {
 
   const sections = createSections();
 
-  useEffect(() => {
-    localStorage.setItem('kanji_progress', JSON.stringify(progress));
-  }, [progress]);
-
   const generateOptions = (word, mode) => {
-    const correctAnswer = mode === 'reading' ? word.reading : word.english;
+    let correctAnswer;
+    if (mode === 'reading') {
+      correctAnswer = word.reading;
+    } else if (mode === 'meaning') {
+      correctAnswer = word.english;
+    } else if (mode === 'turkish') {
+      correctAnswer = word.turkish;
+    }
+
     const allWords = [];
     kanjiData.forEach(k => {
       if (k.vocabulary) {
@@ -109,11 +111,22 @@ function App() {
     });
     
     const wrongAnswers = allWords
-      .filter(w => w !== word && (mode === 'reading' ? w.reading !== correctAnswer : w.english !== correctAnswer))
+      .filter(w => {
+        if (w === word) return false;
+        if (mode === 'reading') return w.reading !== correctAnswer;
+        if (mode === 'meaning') return w.english !== correctAnswer;
+        if (mode === 'turkish') return w.turkish !== correctAnswer;
+        return true;
+      })
       .sort(() => Math.random() - 0.5)
       .slice(0, 3);
     
-    const opts = [...wrongAnswers.map(w => mode === 'reading' ? w.reading : w.english), correctAnswer]
+    const opts = [...wrongAnswers.map(w => {
+      if (mode === 'reading') return w.reading;
+      if (mode === 'meaning') return w.english;
+      if (mode === 'turkish') return w.turkish;
+      return '';
+    }), correctAnswer]
       .sort(() => Math.random() - 0.5);
     
     setOptions(opts);
@@ -136,15 +149,22 @@ function App() {
         mode = 'meaning';
       } else if (selectedMode === 'reading') {
         mode = 'reading';
+      } else if (selectedMode === 'turkish') {
+        mode = 'turkish';
+      } else if (selectedMode === 'writing') {
+        mode = 'writing';
       } else {
-        mode = Math.random() > 0.5 ? 'reading' : 'meaning';
+        const modes = ['reading', 'meaning', 'turkish', 'writing'];
+        mode = modes[Math.floor(Math.random() * modes.length)];
       }
       
       setQuizMode(mode);
       setInputValue('');
       setFeedback(null);
       
-      generateOptions(word, mode);
+      if (mode !== 'writing') {
+        generateOptions(word, mode);
+      }
     }
   };
 
@@ -157,14 +177,15 @@ function App() {
       isCorrect = answer === currentWord.reading;
     } else if (quizMode === 'meaning') {
       isCorrect = answer === currentWord.english;
-    } else {
+    } else if (quizMode === 'turkish') {
+      isCorrect = answer === currentWord.turkish;
+    } else if (quizMode === 'writing') {
       const hiraganaInput = toKana(inputValue.toLowerCase());
       isCorrect = hiraganaInput === currentWord.reading;
     }
 
     setFeedback(isCorrect ? 'correct' : 'incorrect');
 
-    // Update progress
     const wordKey = `${currentWord.kanji}-${currentWord.word}`;
     setProgress(prev => ({
       ...prev,
@@ -195,23 +216,17 @@ function App() {
     let totalWords = 0;
     let completedWords = 0;
     
-    if (section.type === 'kanji') {
-      totalWords = section.words.length;
-      section.words.forEach(word => {
-        const key = `${word.kanji}-${word.word}`;
-        if (progress[key]?.attempts > 0) {
+    section.words.forEach(word => {
+      const key = `${word.kanji}-${word.word}`;
+      if (progress[key]) {
+        totalWords++;
+        if (progress[key].correct > 0) {
           completedWords++;
         }
-      });
-    } else {
-      totalWords = section.words.length;
-      section.words.forEach(word => {
-        const key = `${word.kanji}-${word.word}`;
-        if (progress[key]?.attempts > 0) {
-          completedWords++;
-        }
-      });
-    }
+      } else {
+        totalWords++;
+      }
+    });
     
     const percentage = totalWords > 0 ? Math.round((completedWords / totalWords) * 100) : 0;
     return { completed: completedWords, total: totalWords, percentage };
@@ -238,7 +253,7 @@ function App() {
       section.words.forEach(word => {
         totalWords++;
         const key = `${word.kanji}-${word.word}`;
-        if (progress[key]?.attempts > 0) {
+        if (progress[key]?.correct > 0) {
           completedWords++;
         }
       });
@@ -250,7 +265,6 @@ function App() {
 
   return (
     <div className="app">
-      {/* Ana Ekran */}
       {screen === 'home' && (
         <div className="home-screen">
           <header className="header">
@@ -269,7 +283,6 @@ function App() {
             <p className="quiz-subtitle">Vault notlarından üretildi</p>
           </div>
 
-          {/* Soru Modu */}
           <div className="section">
             <h3 className="section-title">SORU MODU</h3>
             <div className="mode-buttons">
@@ -283,7 +296,13 @@ function App() {
                 className={`mode-btn ${selectedMode === 'meaning' ? 'active' : ''}`}
                 onClick={() => setSelectedMode('meaning')}
               >
-                Anlam
+                İngilizce Anlam
+              </button>
+              <button 
+                className={`mode-btn ${selectedMode === 'turkish' ? 'active' : ''}`}
+                onClick={() => setSelectedMode('turkish')}
+              >
+                Türkçe Anlam
               </button>
               <button 
                 className={`mode-btn ${selectedMode === 'reading' ? 'active' : ''}`}
@@ -291,10 +310,15 @@ function App() {
               >
                 Okunuş
               </button>
+              <button 
+                className={`mode-btn ${selectedMode === 'writing' ? 'active' : ''}`}
+                onClick={() => setSelectedMode('writing')}
+              >
+                Yazma
+              </button>
             </div>
           </div>
 
-          {/* Bölümler */}
           <div className="section">
             <div className="section-header">
               <h3 className="section-title">BÖLÜMLER</h3>
@@ -373,7 +397,6 @@ function App() {
         </div>
       )}
 
-      {/* Quiz Ekranı */}
       {screen === 'quiz' && currentWord && (
         <div className="quiz-screen">
           <button className="back-btn" onClick={() => setScreen('home')}>
@@ -408,7 +431,7 @@ function App() {
 
             {quizMode === 'meaning' && (
               <div className="mode-section">
-                <h3>Anlamını seçin:</h3>
+                <h3>İngilizce anlamını seçin:</h3>
                 <div className="options-grid">
                   {options.map((opt, i) => (
                     <button
@@ -424,16 +447,59 @@ function App() {
               </div>
             )}
 
-            {feedback && (
+            {quizMode === 'turkish' && (
+              <div className="mode-section">
+                <h3>Türkçe anlamını seçin:</h3>
+                <div className="options-grid">
+                  {options.map((opt, i) => (
+                    <button
+                      key={i}
+                      className={`option-btn ${feedback ? (opt === currentWord.turkish ? 'correct' : 'incorrect') : ''}`}
+                      onClick={() => handleAnswer(opt)}
+                      disabled={feedback}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {quizMode === 'writing' && (
+              <div className="mode-section">
+                <h3>Okunuşunu yazın (romaji):</h3>
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !feedback && handleAnswer()}
+                  className="reading-input"
+                  disabled={feedback}
+                  placeholder="Örnek: genki"
+                />
+                <div className="kana-preview">{toKana(inputValue.toLowerCase())}</div>
+                {!feedback && (
+                  <button className="submit-btn" onClick={() => handleAnswer()}>
+                    Gönder
+                  </button>
+                )}
+                {feedback && (
+                  <div className={`feedback ${feedback}`}>
+                    {feedback === 'correct' ? '✓ Doğru!' : `✗ Yanlış! Cevap: ${currentWord.reading}`}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {quizMode !== 'writing' && feedback && (
               <div className={`feedback ${feedback}`}>
-                {feedback === 'correct' ? '✓ Doğru!' : `✗ Yanlış!`}
+                {feedback === 'correct' ? '✓ Doğru!' : '✗ Yanlış!'}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Kanji Detay Ekranı */}
       {screen === 'kanjiDetail' && selectedKanji && (
         <div className="detail-screen">
           <button className="back-btn" onClick={() => setScreen('home')}>
@@ -450,13 +516,22 @@ function App() {
             {selectedKanji.vocabulary && (
               <div className="vocab-list">
                 <h3>Kelimeler:</h3>
-                {selectedKanji.vocabulary.map((v, i) => (
-                  <div key={i} className="vocab-item">
-                    <div className="vocab-word">{v.word}</div>
-                    <div className="vocab-reading">{v.reading}</div>
-                    <div className="vocab-meaning">{v.english} • {v.turkish}</div>
-                  </div>
-                ))}
+                {selectedKanji.vocabulary.map((v, i) => {
+                  const key = `${selectedKanji.kanji}-${v.word}`;
+                  const wordProgress = progress[key];
+                  return (
+                    <div key={i} className="vocab-item">
+                      <div className="vocab-word">{v.word}</div>
+                      <div className="vocab-reading">{v.reading}</div>
+                      <div className="vocab-meaning">{v.english} • {v.turkish}</div>
+                      {wordProgress && (
+                        <div className="vocab-progress">
+                          {wordProgress.correct}/{wordProgress.attempts} doğru
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 

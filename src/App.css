@@ -411,6 +411,53 @@ body {
   color: #888;
 }
 
+.vocab-progress {
+  font-size: 14px;
+  color: #aaa;
+  margin-top: 8px;
+}
+
+.reading-input {
+  width: 100%;
+  max-width: 400px;
+  padding: 15px 20px;
+  font-size: 20px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(99, 102, 241, 0.5);
+  border-radius: 12px;
+  color: #fff;
+  margin-bottom: 10px;
+}
+
+.reading-input:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+.kana-preview {
+  font-size: 28px;
+  color: #a5b4fc;
+  margin-bottom: 20px;
+  min-height: 40px;
+}
+
+.submit-btn {
+  padding: 15px 40px;
+  font-size: 20px;
+  background: #6366f1;
+  border: none;
+  border-radius: 12px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.submit-btn:hover {
+  background: #4f46e5;
+  transform: translateY(-2px);
+}
+
 .practice-btn {
   width: 100%;
   margin-top: 30px;

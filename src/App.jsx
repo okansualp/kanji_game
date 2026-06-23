@@ -4,8 +4,22 @@ import kanjiData from '../kanji_game_data.json';
 import './App.css';
 
 function App() {
-  const [screen, setScreen] = useState('home');
-  const [selectedMode, setSelectedMode] = useState('mixed');
+  const [screen, setScreen] = useState(() => {
+    try {
+      const saved = localStorage.getItem('kanji_last_screen');
+      return saved ? JSON.parse(saved) : 'home';
+    } catch (e) {
+      return 'home';
+    }
+  });
+  const [selectedMode, setSelectedMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('kanji_selected_mode');
+      return saved ? JSON.parse(saved) : 'mixed';
+    } catch (e) {
+      return 'mixed';
+    }
+  });
   const [currentQuiz, setCurrentQuiz] = useState([]);
   const [quizIndex, setQuizIndex] = useState(0);
   const [currentWord, setCurrentWord] = useState(null);
@@ -14,6 +28,15 @@ function App() {
   const [feedback, setFeedback] = useState(null);
   const [quizMode, setQuizMode] = useState('reading');
   const [selectedKanji, setSelectedKanji] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [lastSectionIndex, setLastSectionIndex] = useState(() => {
+    try {
+      const saved = localStorage.getItem('kanji_last_section');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
   const [progress, setProgress] = useState(() => {
     try {
       const saved = localStorage.getItem('kanji_progress');
@@ -33,6 +56,14 @@ function App() {
       console.error('Progress kaydetme hatası:', e);
     }
   }, [progress]);
+
+  useEffect(() => {
+    localStorage.setItem('kanji_last_screen', JSON.stringify(screen));
+  }, [screen]);
+
+  useEffect(() => {
+    localStorage.setItem('kanji_selected_mode', JSON.stringify(selectedMode));
+  }, [selectedMode]);
 
   const createSections = () => {
     const sections = [];
@@ -93,6 +124,33 @@ function App() {
 
   const sections = createSections();
 
+  const filteredSections = sections.filter(section => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    
+    if (section.type === 'kanji') {
+      const kanji = section.kanji;
+      const hasKanji = kanji.kanji.includes(searchQuery);
+      const hasWord = kanji.vocabulary?.some(v => 
+        v.word.toLowerCase().includes(query) ||
+        v.reading.toLowerCase().includes(query) ||
+        v.english.toLowerCase().includes(query) ||
+        (v.turkish && v.turkish.toLowerCase().includes(query))
+      );
+      return hasKanji || hasWord;
+    } else {
+      return section.kanjiList.some(kanji => 
+        kanji.kanji.includes(searchQuery) ||
+        kanji.vocabulary?.some(v => 
+          v.word.toLowerCase().includes(query) ||
+          v.reading.toLowerCase().includes(query) ||
+          v.english.toLowerCase().includes(query) ||
+          (v.turkish && v.turkish.toLowerCase().includes(query))
+        )
+      );
+    }
+  });
+
   const generateOptions = (word, mode) => {
     let correctAnswer;
     if (mode === 'reading') {
@@ -132,12 +190,21 @@ function App() {
     setOptions(opts);
   };
 
-  const startQuiz = (section) => {
+  const startQuiz = (section, sectionIndex) => {
+    setLastSectionIndex(sectionIndex);
+    localStorage.setItem('kanji_last_section', JSON.stringify(sectionIndex));
+    
     const quizWords = [...section.words].sort(() => Math.random() - 0.5);
     setCurrentQuiz(quizWords);
     setQuizIndex(0);
     startQuestion(quizWords[0]);
     setScreen('quiz');
+  };
+
+  const continueLastQuiz = () => {
+    if (lastSectionIndex !== null && sections[lastSectionIndex]) {
+      startQuiz(sections[lastSectionIndex], lastSectionIndex);
+    }
   };
 
   const startQuestion = (word) => {
@@ -283,6 +350,24 @@ function App() {
             <p className="quiz-subtitle">Vault notlarından üretildi</p>
           </div>
 
+          {lastSectionIndex !== null && sections[lastSectionIndex] && (
+            <div className="continue-section">
+              <button className="continue-btn" onClick={continueLastQuiz}>
+                📚 Devam Et: {sections[lastSectionIndex].title}
+              </button>
+            </div>
+          )}
+
+          <div className="search-section">
+            <input
+              type="text"
+              className="search-input"
+              placeholder="🔍 Kanji, kelime, okunuş, anlam ara..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
           <div className="section">
             <h3 className="section-title">SORU MODU</h3>
             <div className="mode-buttons">
@@ -328,13 +413,14 @@ function App() {
             </div>
             
             <div className="blocks-grid">
-              {sections.map((section, sectionIndex) => {
+              {filteredSections.map((section, sectionIndex) => {
+                const originalIndex = sections.indexOf(section);
                 const sectionProgress = getSectionProgress(section);
                 return (
                   <div 
                     key={sectionIndex} 
                     className={`block-card ${section.type}`}
-                    onClick={() => startQuiz(section)}
+                    onClick={() => startQuiz(section, originalIndex)}
                   >
                     <div className="block-header">
                       <h4 className="block-title">{section.title}</h4>

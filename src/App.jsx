@@ -4,14 +4,8 @@ import kanjiData from '../kanji_game_data.json';
 import './App.css';
 
 function App() {
-  const [screen, setScreen] = useState(() => {
-    try {
-      const saved = localStorage.getItem('kanji_last_screen');
-      return saved ? JSON.parse(saved) : 'home';
-    } catch (e) {
-      return 'home';
-    }
-  });
+  // Güvenlik: Sayfa yenilendiğinde varsayılan olarak ana ekrana dön
+  const [screen, setScreen] = useState('home');
   const [selectedMode, setSelectedMode] = useState(() => {
     try {
       const saved = localStorage.getItem('kanji_selected_mode');
@@ -47,6 +41,17 @@ function App() {
       return {};
     }
   });
+
+  // LocalStorage'ı tamamen temizleme fonksiyonu
+  const clearAllData = () => {
+    if (window.confirm('Tüm ilerlemenizi silmek istediğinizden emin misiniz?')) {
+      localStorage.clear();
+      setProgress({});
+      setLastSectionIndex(null);
+      setSelectedMode('mixed');
+      window.location.reload();
+    }
+  };
 
   useEffect(() => {
     try {
@@ -407,8 +412,13 @@ function App() {
           <div className="section">
             <div className="section-header">
               <h3 className="section-title">BÖLÜMLER</h3>
-              <div className="progress-summary">
-                {totalStats.completed}/{totalStats.total} kelime tamamlandı
+              <div className="header-actions">
+                <div className="progress-summary">
+                  {totalStats.completed}/{totalStats.total} kelime tamamlandı
+                </div>
+                <button className="clear-btn" onClick={clearAllData}>
+                  🗑️ Sıfırla
+                </button>
               </div>
             </div>
             

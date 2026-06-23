@@ -559,7 +559,7 @@ function App() {
                         <div className="group-info">
                           <span className="group-letter">{group.letter}</span>
                           <span className="group-title">
-                            Grup {group.letter}: Kanji {group.startKanji} - {group.endKanji}
+                            Kanji {group.startKanji} - {group.endKanji}
                           </span>
                         </div>
                         <span className={`group-arrow ${isExpanded ? 'expanded' : ''}`}>

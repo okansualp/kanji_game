@@ -242,12 +242,18 @@ function App() {
         mode = modes[Math.floor(Math.random() * modes.length)];
       }
       
-      // Validate word has necessary data
-      const hasReading = word.reading && word.reading.trim() !== '';
-      const hasEnglish = word.english && word.english.trim() !== '';
-      const hasTurkish = word.turkish && word.turkish.trim() !== '';
+      // Validate word has necessary data (and not placeholder values)
+      const isValidAnswer = (ans) => {
+        if (!ans || ans.trim() === '') return false;
+        const lower = ans.toLowerCase().trim();
+        return !lower.includes('bilinmiyor') && !lower.includes('unknown') && !lower.includes('?');
+      };
       
-      // Fallback logic if current mode has no data
+      const hasReading = isValidAnswer(word.reading);
+      const hasEnglish = isValidAnswer(word.english);
+      const hasTurkish = isValidAnswer(word.turkish);
+      
+      // Fallback logic if current mode has no data or has placeholder
       if (mode === 'reading' && !hasReading) {
         mode = hasEnglish ? 'meaning' : hasTurkish ? 'turkish' : 'reading';
       } else if (mode === 'meaning' && !hasEnglish) {
@@ -278,18 +284,26 @@ function App() {
       correctAnswer = word.turkish;
     }
 
-    // Ultimate fallback: ensure we have at least something
-    if (!correctAnswer || correctAnswer.trim() === '') {
-      if (word.english && word.english.trim()) {
+    // Validation function to check for placeholder values
+    const isValidAnswer = (ans) => {
+      if (!ans || ans.trim() === '') return false;
+      const lower = ans.toLowerCase().trim();
+      return !lower.includes('bilinmiyor') && !lower.includes('unknown') && !lower.includes('?');
+    };
+
+    // Ultimate fallback: ensure we have at least something valid
+    if (!isValidAnswer(correctAnswer)) {
+      if (isValidAnswer(word.english)) {
         correctAnswer = word.english;
         mode = 'meaning';
-      } else if (word.turkish && word.turkish.trim()) {
+      } else if (isValidAnswer(word.turkish)) {
         correctAnswer = word.turkish;
         mode = 'turkish';
-      } else if (word.reading && word.reading.trim()) {
+      } else if (isValidAnswer(word.reading)) {
         correctAnswer = word.reading;
         mode = 'reading';
       } else {
+        // Last resort: use word itself
         correctAnswer = word.word;
         mode = 'meaning';
       }
@@ -311,8 +325,8 @@ function App() {
         else if (mode === 'meaning') wAnswer = w.english;
         else if (mode === 'turkish') wAnswer = w.turkish;
         
-        // Skip if answer is missing or empty
-        if (!wAnswer || wAnswer.trim() === '') return false;
+        // Skip if answer is missing, empty, or placeholder
+        if (!isValidAnswer(wAnswer)) return false;
         
         // Also skip if answer is same as correct
         if (wAnswer.trim() === correctAnswer.trim()) return false;
@@ -332,7 +346,7 @@ function App() {
       else if (mode === 'meaning') ans = w.english;
       else if (mode === 'turkish') ans = w.turkish;
       
-      if (ans && ans.trim() !== '') {
+      if (isValidAnswer(ans)) {
         opts.push(ans.trim());
       }
     });
@@ -343,23 +357,26 @@ function App() {
     // If we still don't have enough, use fallback words
     while (opts.length < 4) {
       const fallbackWord = allWords.find(w => {
-        if (mode === 'reading') {
-          return w.reading && w.reading.trim() !== '' && !opts.includes(w.reading.trim());
-        } else if (mode === 'meaning') {
-          return w.english && w.english.trim() !== '' && !opts.includes(w.english.trim());
-        } else if (mode === 'turkish') {
-          return w.turkish && w.turkish.trim() !== '' && !opts.includes(w.turkish.trim());
-        }
-        return false;
+        let wAns;
+        if (mode === 'reading') wAns = w.reading;
+        else if (mode === 'meaning') wAns = w.english;
+        else if (mode === 'turkish') wAns = w.turkish;
+        
+        return isValidAnswer(wAns) && !opts.includes(wAns.trim());
       });
       
       if (fallbackWord) {
-        if (mode === 'reading') opts.push(fallbackWord.reading.trim());
-        else if (mode === 'meaning') opts.push(fallbackWord.english.trim());
-        else if (mode === 'turkish') opts.push(fallbackWord.turkish.trim());
+        let ans;
+        if (mode === 'reading') ans = fallbackWord.reading;
+        else if (mode === 'meaning') ans = fallbackWord.english;
+        else if (mode === 'turkish') ans = fallbackWord.turkish;
+        
+        if (isValidAnswer(ans)) {
+          opts.push(ans.trim());
+        }
       } else {
         // Final ultimate fallback - use simple placeholders
-        opts.push('Alternatif ' + (opts.length + 1));
+        opts.push('Seçenek ' + (opts.length + 1));
       }
     }
     

@@ -207,83 +207,6 @@ function App() {
     }
   });
 
-  const generateOptions = (word, mode) => {
-    let correctAnswer;
-    if (mode === 'reading') {
-      correctAnswer = word.reading;
-    } else if (mode === 'meaning') {
-      correctAnswer = word.english;
-    } else if (mode === 'turkish') {
-      correctAnswer = word.turkish;
-    }
-
-    // If correct answer is missing, fall back to another mode
-    if (!correctAnswer) {
-      if (word.english) {
-        correctAnswer = word.english;
-        mode = 'meaning';
-      } else if (word.turkish) {
-        correctAnswer = word.turkish;
-        mode = 'turkish';
-      } else {
-        correctAnswer = word.reading;
-        mode = 'reading';
-      }
-    }
-
-    const allWords = [];
-    kanjiData.forEach(k => {
-      if (k.vocabulary) {
-        k.vocabulary.forEach(v => allWords.push(v));
-      }
-    });
-    
-    const wrongAnswers = allWords
-      .filter(w => {
-        if (w === word) return false;
-        
-        let wAnswer;
-        if (mode === 'reading') wAnswer = w.reading;
-        else if (mode === 'meaning') wAnswer = w.english;
-        else if (mode === 'turkish') wAnswer = w.turkish;
-        
-        // Skip if answer is missing
-        if (!wAnswer) return false;
-        return wAnswer !== correctAnswer;
-      })
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3);
-    
-    const opts = [...wrongAnswers.map(w => {
-      if (mode === 'reading') return w.reading;
-      else if (mode === 'meaning') return w.english;
-      else if (mode === 'turkish') return w.turkish;
-      return w.english || w.turkish || w.reading;
-    }), correctAnswer]
-      .filter(opt => opt) // Remove any empty options
-      .sort(() => Math.random() - 0.5);
-    
-    // If we don't have 4 options, add fallback options
-    while (opts.length < 4) {
-      const fallbackWord = allWords.find(w => {
-        if (mode === 'reading') return w.reading && !opts.includes(w.reading);
-        else if (mode === 'meaning') return w.english && !opts.includes(w.english);
-        else if (mode === 'turkish') return w.turkish && !opts.includes(w.turkish);
-        return false;
-      });
-      if (fallbackWord) {
-        if (mode === 'reading') opts.push(fallbackWord.reading);
-        else if (mode === 'meaning') opts.push(fallbackWord.english);
-        else if (mode === 'turkish') opts.push(fallbackWord.turkish);
-      } else {
-        // Last resort fallback
-        opts.push('Seçenek ' + (opts.length + 1));
-      }
-    }
-    
-    setOptions(opts);
-  };
-
   const startQuiz = (section, sectionIndex) => {
     setLastSectionIndex(sectionIndex);
     localStorage.setItem('kanji_last_section', JSON.stringify(sectionIndex));
@@ -319,6 +242,22 @@ function App() {
         mode = modes[Math.floor(Math.random() * modes.length)];
       }
       
+      // Validate word has necessary data
+      const hasReading = word.reading && word.reading.trim() !== '';
+      const hasEnglish = word.english && word.english.trim() !== '';
+      const hasTurkish = word.turkish && word.turkish.trim() !== '';
+      
+      // Fallback logic if current mode has no data
+      if (mode === 'reading' && !hasReading) {
+        mode = hasEnglish ? 'meaning' : hasTurkish ? 'turkish' : 'reading';
+      } else if (mode === 'meaning' && !hasEnglish) {
+        mode = hasTurkish ? 'turkish' : hasReading ? 'reading' : 'meaning';
+      } else if (mode === 'turkish' && !hasTurkish) {
+        mode = hasEnglish ? 'meaning' : hasReading ? 'reading' : 'turkish';
+      } else if (mode === 'writing' && !hasReading) {
+        mode = hasEnglish ? 'meaning' : hasTurkish ? 'turkish' : 'meaning';
+      }
+      
       setQuizMode(mode);
       setInputValue('');
       setFeedback(null);
@@ -327,6 +266,107 @@ function App() {
         generateOptions(word, mode);
       }
     }
+  };
+
+  const generateOptions = (word, mode) => {
+    let correctAnswer;
+    if (mode === 'reading') {
+      correctAnswer = word.reading;
+    } else if (mode === 'meaning') {
+      correctAnswer = word.english;
+    } else if (mode === 'turkish') {
+      correctAnswer = word.turkish;
+    }
+
+    // Ultimate fallback: ensure we have at least something
+    if (!correctAnswer || correctAnswer.trim() === '') {
+      if (word.english && word.english.trim()) {
+        correctAnswer = word.english;
+        mode = 'meaning';
+      } else if (word.turkish && word.turkish.trim()) {
+        correctAnswer = word.turkish;
+        mode = 'turkish';
+      } else if (word.reading && word.reading.trim()) {
+        correctAnswer = word.reading;
+        mode = 'reading';
+      } else {
+        correctAnswer = word.word;
+        mode = 'meaning';
+      }
+    }
+
+    const allWords = [];
+    kanjiData.forEach(k => {
+      if (k.vocabulary) {
+        k.vocabulary.forEach(v => allWords.push(v));
+      }
+    });
+    
+    const wrongAnswers = allWords
+      .filter(w => {
+        if (w === word) return false;
+        
+        let wAnswer;
+        if (mode === 'reading') wAnswer = w.reading;
+        else if (mode === 'meaning') wAnswer = w.english;
+        else if (mode === 'turkish') wAnswer = w.turkish;
+        
+        // Skip if answer is missing or empty
+        if (!wAnswer || wAnswer.trim() === '') return false;
+        
+        // Also skip if answer is same as correct
+        if (wAnswer.trim() === correctAnswer.trim()) return false;
+        
+        return true;
+      })
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3);
+    
+    // Build options
+    const opts = [];
+    
+    // Add wrong answers
+    wrongAnswers.forEach(w => {
+      let ans;
+      if (mode === 'reading') ans = w.reading;
+      else if (mode === 'meaning') ans = w.english;
+      else if (mode === 'turkish') ans = w.turkish;
+      
+      if (ans && ans.trim() !== '') {
+        opts.push(ans.trim());
+      }
+    });
+    
+    // Add correct answer
+    opts.push(correctAnswer.trim());
+    
+    // If we still don't have enough, use fallback words
+    while (opts.length < 4) {
+      const fallbackWord = allWords.find(w => {
+        if (mode === 'reading') {
+          return w.reading && w.reading.trim() !== '' && !opts.includes(w.reading.trim());
+        } else if (mode === 'meaning') {
+          return w.english && w.english.trim() !== '' && !opts.includes(w.english.trim());
+        } else if (mode === 'turkish') {
+          return w.turkish && w.turkish.trim() !== '' && !opts.includes(w.turkish.trim());
+        }
+        return false;
+      });
+      
+      if (fallbackWord) {
+        if (mode === 'reading') opts.push(fallbackWord.reading.trim());
+        else if (mode === 'meaning') opts.push(fallbackWord.english.trim());
+        else if (mode === 'turkish') opts.push(fallbackWord.turkish.trim());
+      } else {
+        // Final ultimate fallback - use simple placeholders
+        opts.push('Alternatif ' + (opts.length + 1));
+      }
+    }
+    
+    // Shuffle options
+    opts.sort(() => Math.random() - 0.5);
+    
+    setOptions(opts);
   };
 
   const handleAnswer = (answer) => {

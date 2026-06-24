@@ -217,6 +217,20 @@ function App() {
       correctAnswer = word.turkish;
     }
 
+    // If correct answer is missing, fall back to another mode
+    if (!correctAnswer) {
+      if (word.english) {
+        correctAnswer = word.english;
+        mode = 'meaning';
+      } else if (word.turkish) {
+        correctAnswer = word.turkish;
+        mode = 'turkish';
+      } else {
+        correctAnswer = word.reading;
+        mode = 'reading';
+      }
+    }
+
     const allWords = [];
     kanjiData.forEach(k => {
       if (k.vocabulary) {
@@ -227,21 +241,45 @@ function App() {
     const wrongAnswers = allWords
       .filter(w => {
         if (w === word) return false;
-        if (mode === 'reading') return w.reading !== correctAnswer;
-        if (mode === 'meaning') return w.english !== correctAnswer;
-        if (mode === 'turkish') return w.turkish !== correctAnswer;
-        return true;
+        
+        let wAnswer;
+        if (mode === 'reading') wAnswer = w.reading;
+        else if (mode === 'meaning') wAnswer = w.english;
+        else if (mode === 'turkish') wAnswer = w.turkish;
+        
+        // Skip if answer is missing
+        if (!wAnswer) return false;
+        return wAnswer !== correctAnswer;
       })
       .sort(() => Math.random() - 0.5)
       .slice(0, 3);
     
     const opts = [...wrongAnswers.map(w => {
       if (mode === 'reading') return w.reading;
-      if (mode === 'meaning') return w.english;
-      if (mode === 'turkish') return w.turkish;
-      return '';
+      else if (mode === 'meaning') return w.english;
+      else if (mode === 'turkish') return w.turkish;
+      return w.english || w.turkish || w.reading;
     }), correctAnswer]
+      .filter(opt => opt) // Remove any empty options
       .sort(() => Math.random() - 0.5);
+    
+    // If we don't have 4 options, add fallback options
+    while (opts.length < 4) {
+      const fallbackWord = allWords.find(w => {
+        if (mode === 'reading') return w.reading && !opts.includes(w.reading);
+        else if (mode === 'meaning') return w.english && !opts.includes(w.english);
+        else if (mode === 'turkish') return w.turkish && !opts.includes(w.turkish);
+        return false;
+      });
+      if (fallbackWord) {
+        if (mode === 'reading') opts.push(fallbackWord.reading);
+        else if (mode === 'meaning') opts.push(fallbackWord.english);
+        else if (mode === 'turkish') opts.push(fallbackWord.turkish);
+      } else {
+        // Last resort fallback
+        opts.push('Seçenek ' + (opts.length + 1));
+      }
+    }
     
     setOptions(opts);
   };

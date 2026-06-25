@@ -43,6 +43,58 @@ function App() {
     }
   });
 
+  // Validate helper function
+  const isValidOption = (val) => {
+    if (val === null || val === undefined) return false;
+    const s = String(val).trim();
+    const lower = s.toLowerCase();
+    return s.length > 0 && 
+           s !== '-' && 
+           s !== '?' &&
+           !lower.includes('bilinmiyor') &&
+           !lower.includes('unknown');
+  };
+
+  // Collect all valid readings
+  const collectReadings = () => {
+    const readings = new Set();
+    kanjiData.forEach((entry) => {
+      if (entry.vocabulary) {
+        entry.vocabulary.forEach((v) => {
+          if (isValidOption(v.reading)) readings.add(v.reading);
+        });
+      }
+    });
+    return [...readings];
+  };
+
+  // Collect all valid meanings
+  const collectMeanings = () => {
+    const meanings = new Set();
+    kanjiData.forEach((entry) => {
+      if (entry.vocabulary) {
+        entry.vocabulary.forEach((v) => {
+          const val = v.turkish || v.english;
+          if (isValidOption(val)) meanings.add(val);
+        });
+      }
+    });
+    return [...meanings];
+  };
+
+  // Build options
+  const buildOptions = (correct, mode) => {
+    const pool = mode === 'reading' ? collectReadings() : collectMeanings();
+    
+    // Filter valid options, exclude correct
+    const validPool = pool.filter((item) => isValidOption(item) && item !== correct);
+    
+    // Pick random distractors
+    const picked = [...validPool].sort(() => Math.random() - 0.5).slice(0, 3);
+    
+    return [correct, ...picked].sort(() => Math.random() - 0.5);
+  };
+
   // LocalStorage'ı tamamen temizleme fonksiyonu
   const clearAllData = () => {
     if (window.confirm('Tüm ilerlemenizi silmek istediğinizden emin misiniz?')) {
@@ -225,165 +277,42 @@ function App() {
   };
 
   const startQuestion = (word) => {
-    if (word) {
-      setCurrentWord(word);
-      
-      let mode;
-      if (selectedMode === 'meaning') {
-        mode = 'meaning';
-      } else if (selectedMode === 'reading') {
-        mode = 'reading';
-      } else if (selectedMode === 'turkish') {
-        mode = 'turkish';
-      } else if (selectedMode === 'writing') {
-        mode = 'writing';
-      } else {
-        const modes = ['reading', 'meaning', 'turkish', 'writing'];
-        mode = modes[Math.floor(Math.random() * modes.length)];
-      }
-      
-      // Validate word has necessary data (and not placeholder values)
-      const isValidAnswer = (ans) => {
-        if (!ans || ans.trim() === '') return false;
-        const lower = ans.toLowerCase().trim();
-        return !lower.includes('bilinmiyor') && !lower.includes('unknown') && !lower.includes('?');
-      };
-      
-      const hasReading = isValidAnswer(word.reading);
-      const hasEnglish = isValidAnswer(word.english);
-      const hasTurkish = isValidAnswer(word.turkish);
-      
-      // Fallback logic if current mode has no data or has placeholder
-      if (mode === 'reading' && !hasReading) {
-        mode = hasEnglish ? 'meaning' : hasTurkish ? 'turkish' : 'reading';
-      } else if (mode === 'meaning' && !hasEnglish) {
-        mode = hasTurkish ? 'turkish' : hasReading ? 'reading' : 'meaning';
-      } else if (mode === 'turkish' && !hasTurkish) {
-        mode = hasEnglish ? 'meaning' : hasReading ? 'reading' : 'turkish';
-      } else if (mode === 'writing' && !hasReading) {
-        mode = hasEnglish ? 'meaning' : hasTurkish ? 'turkish' : 'meaning';
-      }
-      
-      setQuizMode(mode);
-      setInputValue('');
-      setFeedback(null);
-      
-      if (mode !== 'writing') {
-        generateOptions(word, mode);
-      }
-    }
-  };
+    if (!word) return;
+    
+    let mode = selectedMode === 'mixed' 
+      ? ['reading', 'meaning', 'turkish', 'writing'][Math.floor(Math.random() * 4)] 
+      : selectedMode;
 
-  const generateOptions = (word, mode) => {
-    let correctAnswer;
-    if (mode === 'reading') {
-      correctAnswer = word.reading;
-    } else if (mode === 'meaning') {
-      correctAnswer = word.english;
-    } else if (mode === 'turkish') {
-      correctAnswer = word.turkish;
+    // Check if we need to fallback due to missing data
+    if (mode === 'reading' && !isValidOption(word.reading)) {
+      mode = isValidOption(word.english) ? 'meaning' : isValidOption(word.turkish) ? 'turkish' : 'reading';
+    } else if (mode === 'meaning' && !isValidOption(word.english)) {
+      mode = isValidOption(word.turkish) ? 'turkish' : isValidOption(word.reading) ? 'reading' : 'meaning';
+    } else if (mode === 'turkish' && !isValidOption(word.turkish)) {
+      mode = isValidOption(word.english) ? 'meaning' : isValidOption(word.reading) ? 'reading' : 'turkish';
+    } else if (mode === 'writing' && !isValidOption(word.reading)) {
+      mode = isValidOption(word.english) ? 'meaning' : isValidOption(word.turkish) ? 'turkish' : 'meaning';
     }
 
-    // Validation function to check for placeholder values
-    const isValidAnswer = (ans) => {
-      if (!ans || ans.trim() === '') return false;
-      const lower = ans.toLowerCase().trim();
-      return !lower.includes('bilinmiyor') && !lower.includes('unknown') && !lower.includes('?');
-    };
+    setCurrentWord(word);
+    setQuizMode(mode);
+    setInputValue('');
+    setFeedback(null);
 
-    // Ultimate fallback: ensure we have at least something valid
-    if (!isValidAnswer(correctAnswer)) {
-      if (isValidAnswer(word.english)) {
-        correctAnswer = word.english;
-        mode = 'meaning';
-      } else if (isValidAnswer(word.turkish)) {
-        correctAnswer = word.turkish;
-        mode = 'turkish';
-      } else if (isValidAnswer(word.reading)) {
-        correctAnswer = word.reading;
-        mode = 'reading';
-      } else {
-        // Last resort: use word itself
-        correctAnswer = word.word;
-        mode = 'meaning';
-      }
-    }
-
-    const allWords = [];
-    kanjiData.forEach(k => {
-      if (k.vocabulary) {
-        k.vocabulary.forEach(v => allWords.push(v));
-      }
-    });
-    
-    const wrongAnswers = allWords
-      .filter(w => {
-        if (w === word) return false;
-        
-        let wAnswer;
-        if (mode === 'reading') wAnswer = w.reading;
-        else if (mode === 'meaning') wAnswer = w.english;
-        else if (mode === 'turkish') wAnswer = w.turkish;
-        
-        // Skip if answer is missing, empty, or placeholder
-        if (!isValidAnswer(wAnswer)) return false;
-        
-        // Also skip if answer is same as correct
-        if (wAnswer.trim() === correctAnswer.trim()) return false;
-        
-        return true;
-      })
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3);
-    
-    // Build options
-    const opts = [];
-    
-    // Add wrong answers
-    wrongAnswers.forEach(w => {
-      let ans;
-      if (mode === 'reading') ans = w.reading;
-      else if (mode === 'meaning') ans = w.english;
-      else if (mode === 'turkish') ans = w.turkish;
+    if (mode !== 'writing') {
+      let correctAnswer;
+      if (mode === 'reading') correctAnswer = word.reading;
+      else if (mode === 'meaning') correctAnswer = word.english;
+      else if (mode === 'turkish') correctAnswer = word.turkish;
       
-      if (isValidAnswer(ans)) {
-        opts.push(ans.trim());
+      // Final fallback for correct answer
+      if (!isValidOption(correctAnswer)) {
+        correctAnswer = word.english || word.turkish || word.reading || word.word;
       }
-    });
-    
-    // Add correct answer
-    opts.push(correctAnswer.trim());
-    
-    // If we still don't have enough, use fallback words
-    while (opts.length < 4) {
-      const fallbackWord = allWords.find(w => {
-        let wAns;
-        if (mode === 'reading') wAns = w.reading;
-        else if (mode === 'meaning') wAns = w.english;
-        else if (mode === 'turkish') wAns = w.turkish;
-        
-        return isValidAnswer(wAns) && !opts.includes(wAns.trim());
-      });
       
-      if (fallbackWord) {
-        let ans;
-        if (mode === 'reading') ans = fallbackWord.reading;
-        else if (mode === 'meaning') ans = fallbackWord.english;
-        else if (mode === 'turkish') ans = fallbackWord.turkish;
-        
-        if (isValidAnswer(ans)) {
-          opts.push(ans.trim());
-        }
-      } else {
-        // Final ultimate fallback - use simple placeholders
-        opts.push('Seçenek ' + (opts.length + 1));
-      }
+      const options = buildOptions(correctAnswer, mode);
+      setOptions(options);
     }
-    
-    // Shuffle options
-    opts.sort(() => Math.random() - 0.5);
-    
-    setOptions(opts);
   };
 
   const handleAnswer = (answer) => {

@@ -317,22 +317,50 @@ function App() {
     }
   };
 
-  const startQuestion = (word) => {
-    if (!word) return;
+  const startQuestion = (word, currentIdx = quizIndex) => {
+    if (!word) {
+      // Try next question if this word is invalid
+      if (currentIdx < currentQuiz.length - 1) {
+        const nextIndex = currentIdx + 1;
+        setQuizIndex(nextIndex);
+        startQuestion(currentQuiz[nextIndex], nextIndex);
+      } else {
+        setScreen('home');
+      }
+      return;
+    }
+    
+    // Check if word has any valid answer
+    const hasValidReading = isValidOption(word.reading);
+    const hasValidEnglish = isValidOption(word.english);
+    const hasValidTurkish = isValidOption(word.turkish);
+    
+    if (!hasValidReading && !hasValidEnglish && !hasValidTurkish) {
+      // No valid answers for this word, try next
+      console.warn(`Skipping invalid word: ${word.word}`, word);
+      if (currentIdx < currentQuiz.length - 1) {
+        const nextIndex = currentIdx + 1;
+        setQuizIndex(nextIndex);
+        startQuestion(currentQuiz[nextIndex], nextIndex);
+      } else {
+        setScreen('home');
+      }
+      return;
+    }
     
     let mode = selectedMode === 'mixed' 
       ? ['reading', 'meaning', 'turkish', 'writing'][Math.floor(Math.random() * 4)] 
       : selectedMode;
 
     // Check if we need to fallback due to missing data
-    if (mode === 'reading' && !isValidOption(word.reading)) {
-      mode = isValidOption(word.english) ? 'meaning' : isValidOption(word.turkish) ? 'turkish' : 'reading';
-    } else if (mode === 'meaning' && !isValidOption(word.english)) {
-      mode = isValidOption(word.turkish) ? 'turkish' : isValidOption(word.reading) ? 'reading' : 'meaning';
-    } else if (mode === 'turkish' && !isValidOption(word.turkish)) {
-      mode = isValidOption(word.english) ? 'meaning' : isValidOption(word.reading) ? 'reading' : 'turkish';
-    } else if (mode === 'writing' && !isValidOption(word.reading)) {
-      mode = isValidOption(word.english) ? 'meaning' : isValidOption(word.turkish) ? 'turkish' : 'meaning';
+    if (mode === 'reading' && !hasValidReading) {
+      mode = hasValidEnglish ? 'meaning' : hasValidTurkish ? 'turkish' : 'reading';
+    } else if (mode === 'meaning' && !hasValidEnglish) {
+      mode = hasValidTurkish ? 'turkish' : hasValidReading ? 'reading' : 'meaning';
+    } else if (mode === 'turkish' && !hasValidTurkish) {
+      mode = hasValidEnglish ? 'meaning' : hasValidReading ? 'reading' : 'turkish';
+    } else if (mode === 'writing' && !hasValidReading) {
+      mode = hasValidEnglish ? 'meaning' : hasValidTurkish ? 'turkish' : 'meaning';
     }
 
     setCurrentWord(word);

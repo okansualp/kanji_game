@@ -70,6 +70,9 @@ function App() {
            !lower.includes('unknown');
   };
 
+  // Helper function to check boss level
+  const isBossLevel = (idx) => idx > 0 && (idx + 1) % 50 === 0;
+
   // Collect all valid readings
   const collectReadings = () => {
     const readings = new Set();

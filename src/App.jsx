@@ -42,30 +42,6 @@ function App() {
       return {};
     }
   });
-  const [completedKanjis, setCompletedKanjis] = useState(() => {
-    try {
-      const saved = localStorage.getItem('kanji_completed_kanjis');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-  const [completedWords, setCompletedWords] = useState(() => {
-    try {
-      const saved = localStorage.getItem('kanji_completed_words');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-  const [bossLevel, setBossLevel] = useState(() => {
-    try {
-      const saved = localStorage.getItem('kanji_boss_level');
-      return saved ? JSON.parse(saved) : 1;
-    } catch (e) {
-      return 1;
-    }
-  });
 
   // Validate helper function
   const isValidOption = (val) => {
@@ -126,9 +102,6 @@ function App() {
       setProgress({});
       setLastSectionIndex(null);
       setSelectedMode('mixed');
-      setCompletedKanjis([]);
-      setCompletedWords([]);
-      setBossLevel(1);
       window.location.reload();
     }
   };
@@ -149,18 +122,6 @@ function App() {
   useEffect(() => {
     localStorage.setItem('kanji_last_section', JSON.stringify(lastSectionIndex));
   }, [lastSectionIndex]);
-
-  useEffect(() => {
-    localStorage.setItem('kanji_completed_kanjis', JSON.stringify(completedKanjis));
-  }, [completedKanjis]);
-
-  useEffect(() => {
-    localStorage.setItem('kanji_completed_words', JSON.stringify(completedWords));
-  }, [completedWords]);
-
-  useEffect(() => {
-    localStorage.setItem('kanji_boss_level', JSON.stringify(bossLevel));
-  }, [bossLevel]);
 
   const createSections = () => {
     const sections = [];

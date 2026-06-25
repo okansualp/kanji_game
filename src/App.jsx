@@ -423,7 +423,7 @@ function App() {
       } else {
         setScreen('home');
       }
-    }, 1500);
+    }, 3500); // Increased time to read details
   };
 
   const goToKanjiDetail = (kanji) => {
@@ -878,16 +878,32 @@ function App() {
                   </button>
                 )}
                 {feedback && (
-                  <div className={`feedback ${feedback}`}>
-                    {feedback === 'correct' ? '✓ Doğru!' : `✗ Yanlış! Cevap: ${currentWord.reading}`}
+                  <div className="feedback-details">
+                    <div className={`feedback ${feedback}`}>
+                      {feedback === 'correct' ? '✓ Doğru!' : '✗ Yanlış!'}
+                    </div>
+                    <div className="word-details">
+                      <div className="detail-word">{currentWord.word}</div>
+                      <div className="detail-reading">Okunuş: {currentWord.reading}</div>
+                      <div className="detail-meaning">İngilizce: {currentWord.english}</div>
+                      <div className="detail-meaning">Türkçe: {currentWord.turkish}</div>
+                    </div>
                   </div>
                 )}
               </div>
             )}
 
             {quizMode !== 'writing' && feedback && (
-              <div className={`feedback ${feedback}`}>
-                {feedback === 'correct' ? '✓ Doğru!' : '✗ Yanlış!'}
+              <div className="feedback-details">
+                <div className={`feedback ${feedback}`}>
+                  {feedback === 'correct' ? '✓ Doğru!' : '✗ Yanlış!'}
+                </div>
+                <div className="word-details">
+                  <div className="detail-word">{currentWord.word}</div>
+                  <div className="detail-reading">Okunuş: {currentWord.reading}</div>
+                  <div className="detail-meaning">İngilizce: {currentWord.english}</div>
+                  <div className="detail-meaning">Türkçe: {currentWord.turkish}</div>
+                </div>
               </div>
             )}
           </div>

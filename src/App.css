@@ -269,6 +269,16 @@ body {
   border-color: #ef5350;
 }
 
+/* Completed kanji styles */
+.block-card.completed {
+  border-color: #4caf50;
+  background: linear-gradient(135deg, #1e1e1e 0%, rgba(76, 175, 80, 0.15) 100%);
+}
+
+.block-card.completed:hover {
+  border-color: #66bb6a;
+}
+
 .block-header {
   display: flex;
   justify-content: space-between;
@@ -503,6 +513,14 @@ body {
   border-radius: 12px;
   padding: 20px;
   margin-bottom: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.vocab-item.completed {
+  background: rgba(76, 175, 80, 0.15);
+  border: 1px solid #4caf50;
 }
 
 .vocab-word {

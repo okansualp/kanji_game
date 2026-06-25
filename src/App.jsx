@@ -73,6 +73,25 @@ function App() {
   // Helper function to check boss level
   const isBossLevel = (idx) => idx > 0 && (idx + 1) % 50 === 0;
 
+  // Handle kanji complete
+  const handleKanjiComplete = () => { 
+    if (!selectedKanji || completedKanjis.has(selectedKanji.kanji)) return; 
+    setSaveState((prev) => ({ 
+      ...prev, 
+      completedKanjis: [...(prev.completedKanjis ?? []), selectedKanji.kanji], 
+    })); 
+  };
+  
+  // Handle word complete
+  const handleWordComplete = (word) => { 
+    const wordKey = `${word.kanji}-${word.word}`;
+    if (completedWords.has(wordKey)) return; 
+    setSaveState((prev) => ({ 
+      ...prev, 
+      completedWords: [...(prev.completedWords ?? []), wordKey], 
+    })); 
+  };
+
   // Collect all valid readings
   const collectReadings = () => {
     const readings = new Set();
@@ -577,7 +596,7 @@ function App() {
                   return (
                     <div 
                       key={sectionIndex} 
-                      className={`block-card ${section.type}`}
+                      className={`block-card ${section.type} ${section.type === 'kanji' && completedKanjis.has(section.kanji.kanji) ? 'completed' : ''}`}
                       onClick={() => startQuiz(section, originalIndex)}
                     >
                       <div className="block-header">
@@ -585,7 +604,8 @@ function App() {
                         <span className="block-status">
                           {section.type === 'mini-boss' && '🔥 Mini Boss'}
                           {section.type === 'big-boss' && '👹 Büyük Boss'}
-                          {section.type === 'kanji' && section.kanji.kanji}
+                          {section.type === 'kanji' && completedKanjis.has(section.kanji.kanji) && '✅'}
+                          {section.type === 'kanji' && !completedKanjis.has(section.kanji.kanji) && section.kanji.kanji}
                         </span>
                       </div>
                       {section.subtitle && (
@@ -668,7 +688,7 @@ function App() {
                               return (
                                 <div 
                                   key={sectionIndex} 
-                                  className={`block-card ${section.type}`}
+                                  className={`block-card ${section.type} ${section.type === 'kanji' && completedKanjis.has(section.kanji.kanji) ? 'completed' : ''}`}
                                   onClick={() => startQuiz(section, originalIndex)}
                                 >
                                   <div className="block-header">
@@ -676,7 +696,8 @@ function App() {
                                     <span className="block-status">
                                       {section.type === 'mini-boss' && '🔥 Mini Boss'}
                                       {section.type === 'big-boss' && '👹 Büyük Boss'}
-                                      {section.type === 'kanji' && section.kanji.kanji}
+                                      {section.type === 'kanji' && completedKanjis.has(section.kanji.kanji) && '✅'}
+                                      {section.type === 'kanji' && !completedKanjis.has(section.kanji.kanji) && section.kanji.kanji}
                                     </span>
                                   </div>
                                   {section.subtitle && (
@@ -862,16 +883,45 @@ function App() {
               <div className="vocab-list">
                 <h3>Kelimeler:</h3>
                 {selectedKanji.vocabulary.map((v, i) => {
+                  const word = { ...v, kanji: selectedKanji.kanji };
                   const key = `${selectedKanji.kanji}-${v.word}`;
                   const wordProgress = progress[key];
+                  const isCompleted = completedWords.has(key);
                   return (
-                    <div key={i} className="vocab-item">
-                      <div className="vocab-word">{v.word}</div>
-                      <div className="vocab-reading">{v.reading}</div>
-                      <div className="vocab-meaning">{v.english} • {v.turkish}</div>
-                      {wordProgress && (
-                        <div className="vocab-progress">
-                          {wordProgress.correct}/{wordProgress.attempts} doğru
+                    <div key={i} className={`vocab-item ${isCompleted ? 'completed' : ''}`}>
+                      <div>
+                        <div className="vocab-word">{v.word}</div>
+                        <div className="vocab-reading">{v.reading}</div>
+                        <div className="vocab-meaning">{v.english} • {v.turkish}</div>
+                        {wordProgress && (
+                          <div className="vocab-progress">
+                            {wordProgress.correct}/{wordProgress.attempts} doğru
+                          </div>
+                        )}
+                      </div>
+                      {!isCompleted && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleWordComplete(word);
+                          }}
+                          style={{
+                            backgroundColor: '#4caf50',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '8px 16px',
+                            color: 'white',
+                            cursor: 'pointer',
+                            fontWeight: 'bold',
+                            marginTop: '8px',
+                          }}
+                        >
+                          ✅ Tamamla
+                        </button>
+                      )}
+                      {isCompleted && (
+                        <div style={{ color: '#4caf50', fontWeight: 'bold', marginTop: '8px' }}>
+                          ✅ Tamamlandı
                         </div>
                       )}
                     </div>
@@ -894,6 +944,22 @@ function App() {
             >
               Bu kanjiyle pratik yap
             </button>
+
+            {!completedKanjis.has(selectedKanji.kanji) && (
+              <button 
+                className="practice-btn"
+                onClick={handleKanjiComplete}
+                style={{ backgroundColor: 'var(--accent-color)' }}
+              >
+                ✅ Bu kanjiyi tamamladım
+              </button>
+            )}
+            
+            {completedKanjis.has(selectedKanji.kanji) && (
+              <div style={{ color: 'var(--accent-color)', marginTop: '1rem', fontWeight: 'bold' }}>
+                ✅ Bu kanji tamamlandı!
+              </div>
+            )}
           </div>
         </div>
       )}

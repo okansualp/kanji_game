@@ -6,14 +6,6 @@ import './App.css';
 function App() {
   // Güvenlik: Sayfa yenilendiğinde varsayılan olarak ana ekrana dön
   const [screen, setScreen] = useState('home');
-  const [selectedMode, setSelectedMode] = useState(() => {
-    try {
-      const saved = localStorage.getItem('kanji_selected_mode');
-      return saved ? JSON.parse(saved) : 'mixed';
-    } catch (e) {
-      return 'mixed';
-    }
-  });
   const [currentQuiz, setCurrentQuiz] = useState([]);
   const [quizIndex, setQuizIndex] = useState(0);
   const [currentWord, setCurrentWord] = useState(null);
@@ -24,24 +16,47 @@ function App() {
   const [selectedKanji, setSelectedKanji] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedGroups, setExpandedGroups] = useState(['A']); // Varsayılan olarak A grubu açık
-  const [lastSectionIndex, setLastSectionIndex] = useState(() => {
+
+  // Single saveState object for persistence
+  const [saveState, setSaveState] = useState(() => {
     try {
-      const saved = localStorage.getItem('kanji_last_section');
-      return saved ? JSON.parse(saved) : null;
+      const saved = localStorage.getItem('kanji_save_state');
+      const defaultState = {
+        selectedMode: 'mixed',
+        lastSectionIndex: null,
+        progress: {},
+        kanjiIndex: 0,
+        bossLevel: 1,
+        completedKanjis: [],
+        completedWords: []
+      };
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return { ...defaultState, ...parsed };
+      }
+      return defaultState;
     } catch (e) {
-      return null;
+      console.error('SaveState yükleme hatası:', e);
+      return {
+        selectedMode: 'mixed',
+        lastSectionIndex: null,
+        progress: {},
+        kanjiIndex: 0,
+        bossLevel: 1,
+        completedKanjis: [],
+        completedWords: []
+      };
     }
   });
-  const [progress, setProgress] = useState(() => {
-    try {
-      const saved = localStorage.getItem('kanji_progress');
-      console.log('Yüklenen progress:', saved);
-      return saved ? JSON.parse(saved) : {};
-    } catch (e) {
-      console.error('Progress yükleme hatası:', e);
-      return {};
-    }
-  });
+
+  // Destructure saveState for easy access
+  const selectedMode = saveState.selectedMode;
+  const lastSectionIndex = saveState.lastSectionIndex;
+  const progress = saveState.progress;
+  const kanjiIndex = saveState.kanjiIndex;
+  const bossLevel = saveState.bossLevel;
+  const completedKanjis = new Set(saveState.completedKanjis);
+  const completedWords = new Set(saveState.completedWords);
 
   // Validate helper function
   const isValidOption = (val) => {
@@ -98,30 +113,28 @@ function App() {
   // LocalStorage'ı tamamen temizleme fonksiyonu
   const clearAllData = () => {
     if (window.confirm('Tüm ilerlemenizi silmek istediğinizden emin misiniz?')) {
-      localStorage.clear();
-      setProgress({});
-      setLastSectionIndex(null);
-      setSelectedMode('mixed');
+      localStorage.removeItem('kanji_save_state');
+      setSaveState({
+        selectedMode: 'mixed',
+        lastSectionIndex: null,
+        progress: {},
+        kanjiIndex: 0,
+        bossLevel: 1,
+        completedKanjis: [],
+        completedWords: []
+      });
       window.location.reload();
     }
   };
 
+  // Single useEffect for saveState
   useEffect(() => {
     try {
-      console.log('Kaydedilen progress:', progress);
-      localStorage.setItem('kanji_progress', JSON.stringify(progress));
+      localStorage.setItem('kanji_save_state', JSON.stringify(saveState));
     } catch (e) {
-      console.error('Progress kaydetme hatası:', e);
+      console.error('SaveState kaydetme hatası:', e);
     }
-  }, [progress]);
-
-  useEffect(() => {
-    localStorage.setItem('kanji_selected_mode', JSON.stringify(selectedMode));
-  }, [selectedMode]);
-
-  useEffect(() => {
-    localStorage.setItem('kanji_last_section', JSON.stringify(lastSectionIndex));
-  }, [lastSectionIndex]);
+  }, [saveState]);
 
   const createSections = () => {
     const sections = [];
@@ -264,8 +277,10 @@ function App() {
   });
 
   const startQuiz = (section, sectionIndex) => {
-    setLastSectionIndex(sectionIndex);
-    localStorage.setItem('kanji_last_section', JSON.stringify(sectionIndex));
+    setSaveState(prev => ({
+      ...prev,
+      lastSectionIndex: sectionIndex
+    }));
     
     const quizWords = [...section.words].sort(() => Math.random() - 0.5);
     setCurrentQuiz(quizWords);
@@ -338,12 +353,15 @@ function App() {
     setFeedback(isCorrect ? 'correct' : 'incorrect');
 
     const wordKey = `${currentWord.kanji}-${currentWord.word}`;
-    setProgress(prev => ({
+    setSaveState(prev => ({
       ...prev,
-      [wordKey]: {
-        ...prev[wordKey],
-        attempts: (prev[wordKey]?.attempts || 0) + 1,
-        correct: (prev[wordKey]?.correct || 0) + (isCorrect ? 1 : 0)
+      progress: {
+        ...prev.progress,
+        [wordKey]: {
+          ...prev.progress[wordKey],
+          attempts: (prev.progress[wordKey]?.attempts || 0) + 1,
+          correct: (prev.progress[wordKey]?.correct || 0) + (isCorrect ? 1 : 0)
+        }
       }
     }));
 
@@ -490,31 +508,31 @@ function App() {
             <div className="mode-buttons">
               <button 
                 className={`mode-btn ${selectedMode === 'mixed' ? 'active' : ''}`}
-                onClick={() => setSelectedMode('mixed')}
+                onClick={() => setSaveState(prev => ({ ...prev, selectedMode: 'mixed' }))}
               >
                 Karışık
               </button>
               <button 
                 className={`mode-btn ${selectedMode === 'meaning' ? 'active' : ''}`}
-                onClick={() => setSelectedMode('meaning')}
+                onClick={() => setSaveState(prev => ({ ...prev, selectedMode: 'meaning' }))}
               >
                 İngilizce Anlam
               </button>
               <button 
                 className={`mode-btn ${selectedMode === 'turkish' ? 'active' : ''}`}
-                onClick={() => setSelectedMode('turkish')}
+                onClick={() => setSaveState(prev => ({ ...prev, selectedMode: 'turkish' }))}
               >
                 Türkçe Anlam
               </button>
               <button 
                 className={`mode-btn ${selectedMode === 'reading' ? 'active' : ''}`}
-                onClick={() => setSelectedMode('reading')}
+                onClick={() => setSaveState(prev => ({ ...prev, selectedMode: 'reading' }))}
               >
                 Okunuş
               </button>
               <button 
                 className={`mode-btn ${selectedMode === 'writing' ? 'active' : ''}`}
-                onClick={() => setSelectedMode('writing')}
+                onClick={() => setSaveState(prev => ({ ...prev, selectedMode: 'writing' }))}
               >
                 Yazma
               </button>

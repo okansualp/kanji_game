@@ -16,6 +16,12 @@ function App() {
   const [selectedKanji, setSelectedKanji] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedGroups, setExpandedGroups] = useState(['A']); // Varsayılan olarak A grubu açık
+  
+  // Özel grup özellikleri
+  const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [selectedKanjisForGroup, setSelectedKanjisForGroup] = useState([]);
+  const [groupSearchQuery, setGroupSearchQuery] = useState('');
 
   // Single saveState object for persistence
   const [saveState, setSaveState] = useState(() => {
@@ -28,7 +34,8 @@ function App() {
         kanjiIndex: 0,
         bossLevel: 1,
         completedKanjis: [],
-        completedWords: []
+        completedWords: [],
+        customGroups: [] // Yeni: özel gruplar
       };
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -44,7 +51,8 @@ function App() {
         kanjiIndex: 0,
         bossLevel: 1,
         completedKanjis: [],
-        completedWords: []
+        completedWords: [],
+        customGroups: []
       };
     }
   });
@@ -86,10 +94,77 @@ function App() {
   const handleWordComplete = (word) => { 
     const wordKey = `${word.kanji}-${word.word}`;
     if (completedWords.has(wordKey)) return; 
-    setSaveState((prev) => ({ 
+    setSaveState(prev => ({ 
       ...prev, 
       completedWords: [...(prev.completedWords ?? []), wordKey], 
     })); 
+  };
+
+  // Özel grup fonksiyonları
+  const toggleKanjiForGroup = (kanji) => {
+    setSelectedKanjisForGroup(prev => {
+      const isSelected = prev.some(k => k.kanji === kanji.kanji);
+      if (isSelected) {
+        return prev.filter(k => k.kanji !== kanji.kanji);
+      } else {
+        return [...prev, kanji];
+      }
+    });
+  };
+
+  const createCustomGroup = () => {
+    if (!newGroupName.trim()) {
+      alert('Lütfen bir grup adı girin!');
+      return;
+    }
+    if (selectedKanjisForGroup.length < 6 || selectedKanjisForGroup.length > 8) {
+      alert('Lütfen 6-8 arası kanji seçin!');
+      return;
+    }
+    
+    // Grup için kelimeleri topla
+    const groupWords = [];
+    selectedKanjisForGroup.forEach(k => {
+      if (k.vocabulary) {
+        k.vocabulary.forEach(v => groupWords.push({ ...v, kanji: k.kanji }));
+      }
+    });
+    
+    const newGroup = {
+      id: Date.now(),
+      name: newGroupName,
+      kanjis: selectedKanjisForGroup,
+      words: groupWords
+    };
+    
+    setSaveState(prev => ({
+      ...prev,
+      customGroups: [...(prev.customGroups ?? []), newGroup]
+    }));
+    
+    // Modal'ı kapat ve sıfırla
+    setIsCreateGroupModalOpen(false);
+    setNewGroupName('');
+    setSelectedKanjisForGroup([]);
+    setGroupSearchQuery('');
+  };
+
+  const deleteCustomGroup = (groupId, e) => {
+    e.stopPropagation();
+    if (window.confirm('Bu grubu silmek istediğinize emin misiniz?')) {
+      setSaveState(prev => ({
+        ...prev,
+        customGroups: prev.customGroups.filter(g => g.id !== groupId)
+      }));
+    }
+  };
+
+  const startCustomGroupQuiz = (group) => {
+    const quizWords = [...group.words].sort(() => Math.random() - 0.5);
+    setCurrentQuiz(quizWords);
+    setQuizIndex(0);
+    startQuestion(quizWords[0]);
+    setScreen('quiz');
   };
 
   // Collect all valid readings
@@ -602,6 +677,65 @@ function App() {
             </button>
           </div>
 
+          {/* Özel Gruplar Bölümü */}
+          <div className="section">
+            <div className="section-header">
+              <h3 className="section-title">ÖZEL GRUPLAR</h3>
+              <button 
+                className="create-group-btn" 
+                onClick={() => setIsCreateGroupModalOpen(true)}
+              >
+                ➕ Grup Oluştur
+              </button>
+            </div>
+            
+            {saveState.customGroups && saveState.customGroups.length > 0 ? (
+              <div className="blocks-grid">
+                {saveState.customGroups.map((group, index) => {
+                  // Grup için ilerleme hesapla
+                  let groupCompleted = 0;
+                  let groupTotal = 0;
+                  group.words.forEach(word => {
+                    groupTotal++;
+                    const key = `${word.kanji}-${word.word}`;
+                    if (progress[key]?.correct > 0) {
+                      groupCompleted++;
+                    }
+                  });
+                  const groupPercent = groupTotal > 0 ? Math.round((groupCompleted / groupTotal) * 100) : 0;
+                  
+                  return (
+                    <div 
+                      key={group.id} 
+                      className="block-card custom-group"
+                      onClick={() => startCustomGroupQuiz(group)}
+                    >
+                      <div className="block-header">
+                        <h4 className="block-title">{group.name}</h4>
+                        <button 
+                          className="delete-group-btn"
+                          onClick={(e) => deleteCustomGroup(group.id, e)}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                      <div className="custom-group-kanjis">
+                        {group.kanjis.map((k, i) => (
+                          <span key={i} className="mini-kanji small">{k.kanji}</span>
+                        ))}
+                      </div>
+                      <div className="block-progress">
+                        {groupCompleted}/{groupTotal} kelime • %{groupPercent}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p style={{ color: '#888', textAlign: 'center', padding: '20px' }}>Henüz özel grup oluşturmadınız!</p>
+            )}
+          </div>
+
           <div className="section">
             <div className="section-header">
               <h3 className="section-title">BÖLÜMLER</h3>
@@ -1004,6 +1138,106 @@ function App() {
                 ✅ Bu kanji tamamlandı!
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Özel Grup Oluşturma Modal'ı */}
+      {isCreateGroupModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsCreateGroupModalOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Yeni Grup Oluştur</h2>
+              <button 
+                className="close-modal-btn"
+                onClick={() => setIsCreateGroupModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Grup Adı:</label>
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="Örn: Kitap Bölüm 1"
+                  className="form-input"
+                />
+              </div>
+              
+              <div className="form-group">
+                <label>
+                  Kanji Seçin ({selectedKanjisForGroup.length}/8):
+                  {selectedKanjisForGroup.length < 6 && <span style={{ color: '#f87171', marginLeft: '8px' }}>(En az 6 kanji seçin!)</span>}
+                </label>
+                <input
+                  type="text"
+                  value={groupSearchQuery}
+                  onChange={(e) => setGroupSearchQuery(e.target.value)}
+                  placeholder="Kanji ara..."
+                  className="form-input"
+                />
+              </div>
+              
+              <div className="kanji-select-grid">
+                {kanjiData.filter(k => {
+                  if (!groupSearchQuery) return true;
+                  const q = groupSearchQuery.toLowerCase();
+                  return (
+                    k.kanji.includes(groupSearchQuery) ||
+                    k.vocabulary?.some(v => 
+                      v.word.toLowerCase().includes(q) ||
+                      v.reading.toLowerCase().includes(q) ||
+                      v.english.toLowerCase().includes(q) ||
+                      (v.turkish && v.turkish.toLowerCase().includes(q))
+                    )
+                  );
+                }).map(kanji => {
+                  const isSelected = selectedKanjisForGroup.some(k => k.kanji === kanji.kanji);
+                  return (
+                    <div
+                      key={kanji.kanji}
+                      className={`kanji-select-item ${isSelected ? 'selected' : ''}`}
+                      onClick={() => toggleKanjiForGroup(kanji)}
+                    >
+                      <span className="kanji-char">{kanji.kanji}</span>
+                      {isSelected && <span className="checkmark">✓</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {selectedKanjisForGroup.length > 0 && (
+                <div className="selected-kanjis-preview">
+                  <h4>Seçilen Kanji:</h4>
+                  <div className="selected-kanjis-list">
+                    {selectedKanjisForGroup.map(k => (
+                      <span key={k.kanji} className="selected-kanji-tag">
+                        {k.kanji}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="modal-footer">
+              <button 
+                className="cancel-btn"
+                onClick={() => setIsCreateGroupModalOpen(false)}
+              >
+                İptal
+              </button>
+              <button 
+                className="create-btn"
+                onClick={createCustomGroup}
+              >
+                Grup Oluştur
+              </button>
+            </div>
           </div>
         </div>
       )}

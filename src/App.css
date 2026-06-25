@@ -229,6 +229,230 @@ body {
   font-weight: normal;
 }
 
+/* Özel Grup Stilleri */
+.create-group-btn {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.create-group-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.block-card.custom-group {
+  border-color: #10b981;
+  background: linear-gradient(135deg, #1e1e1e 0%, rgba(16, 185, 129, 0.1) 100%);
+}
+
+.custom-group-kanjis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 15px 0;
+}
+
+.mini-kanji.small {
+  font-size: 28px;
+}
+
+.delete-group-btn {
+  background: rgba(248, 113, 113, 0.2);
+  border: none;
+  color: #f87171;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.delete-group-btn:hover {
+  background: rgba(248, 113, 113, 0.4);
+}
+
+/* Modal Stilleri */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: #1e1e1e;
+  border-radius: 16px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: #c9a962;
+}
+
+.close-modal-btn {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.close-modal-btn:hover {
+  color: #fff;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  color: #ccc;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+
+.form-input {
+  width: 100%;
+  padding: 12px;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 8px;
+  color: white;
+  font-size: 16px;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #c9a962;
+}
+
+.kanji-select-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 20px;
+}
+
+.kanji-select-item {
+  background: #2a2a2a;
+  border: 2px solid #444;
+  border-radius: 8px;
+  padding: 15px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.kanji-select-item:hover {
+  border-color: #c9a962;
+}
+
+.kanji-select-item.selected {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.kanji-char {
+  font-size: 36px;
+  color: #c9a962;
+}
+
+.checkmark {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  color: #10b981;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.selected-kanjis-preview {
+  margin-bottom: 20px;
+}
+
+.selected-kanjis-preview h4 {
+  color: #ccc;
+  margin-bottom: 10px;
+}
+
+.selected-kanjis-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.selected-kanji-tag {
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid #10b981;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 28px;
+  color: #10b981;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 20px;
+  border-top: 1px solid #333;
+}
+
+.cancel-btn, .create-btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.cancel-btn {
+  background: #333;
+  color: #ccc;
+}
+
+.cancel-btn:hover {
+  background: #444;
+}
+
+.create-btn {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
 .blocks-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));

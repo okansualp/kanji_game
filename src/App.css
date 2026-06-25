@@ -31,14 +31,14 @@ body {
 }
 
 .title {
-  font-size: 48px;
+  font-size: 36px;
   color: #c9a962;
   font-weight: 300;
   margin-bottom: 5px;
 }
 
 .subtitle {
-  font-size: 20px;
+  font-size: 16px;
   color: #888;
   margin-bottom: 10px;
 }
@@ -60,18 +60,18 @@ body {
 }
 
 .big-kanji {
-  font-size: 150px;
+  font-size: 100px;
   color: #c9a962;
   margin-bottom: 10px;
 }
 
 .quiz-title {
-  font-size: 32px;
+  font-size: 24px;
   margin-bottom: 10px;
 }
 
 .quiz-subtitle {
-  font-size: 20px;
+  font-size: 16px;
   color: #888;
 }
 
@@ -321,14 +321,14 @@ body {
 }
 
 .mini-kanji {
-  font-size: 36px;
+  font-size: 28px;
   color: #c9a962;
   cursor: pointer;
   transition: transform 0.2s;
 }
 
 .mini-kanji.large {
-  font-size: 72px;
+  font-size: 56px;
 }
 
 .mini-kanji:hover {
@@ -455,7 +455,7 @@ body {
 
 .feedback {
   margin-top: 20px;
-  font-size: 24px;
+  font-size: 18px;
   font-weight: bold;
 }
 
@@ -481,7 +481,7 @@ body {
 }
 
 .detail-kanji {
-  font-size: 150px;
+  font-size: 100px;
   text-align: center;
   color: #c9a962;
   margin-bottom: 20px;
@@ -490,7 +490,7 @@ body {
 .detail-info {
   text-align: center;
   margin-bottom: 30px;
-  font-size: 18px;
+  font-size: 16px;
   color: #888;
 }
 
@@ -524,18 +524,18 @@ body {
 }
 
 .vocab-word {
-  font-size: 28px;
+  font-size: 20px;
   margin-bottom: 5px;
 }
 
 .vocab-reading {
-  font-size: 20px;
+  font-size: 16px;
   color: #a5b4fc;
   margin-bottom: 5px;
 }
 
 .vocab-meaning {
-  font-size: 16px;
+  font-size: 14px;
   color: #888;
 }
 

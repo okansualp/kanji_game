@@ -28,7 +28,7 @@ function App() {
     try {
       const saved = localStorage.getItem('kanji_save_state');
       const defaultState = {
-        selectedMode: 'mixed',
+        selectedModes: ['mixed'], // Çoklu mod seçimi
         lastSectionIndex: null,
         progress: {},
         kanjiIndex: 0,
@@ -39,13 +39,17 @@ function App() {
       };
       if (saved) {
         const parsed = JSON.parse(saved);
+        // Eski tek modlu veriyi çoklu moda çevir
+        if (parsed.selectedMode && !parsed.selectedModes) {
+          return { ...defaultState, ...parsed, selectedModes: [parsed.selectedMode] };
+        }
         return { ...defaultState, ...parsed };
       }
       return defaultState;
     } catch (e) {
       console.error('SaveState yükleme hatası:', e);
       return {
-        selectedMode: 'mixed',
+        selectedModes: ['mixed'],
         lastSectionIndex: null,
         progress: {},
         kanjiIndex: 0,
@@ -58,7 +62,7 @@ function App() {
   });
 
   // Destructure saveState for easy access
-  const selectedMode = saveState.selectedMode;
+  const selectedModes = saveState.selectedModes;
   const lastSectionIndex = saveState.lastSectionIndex;
   const progress = saveState.progress;
   const kanjiIndex = saveState.kanjiIndex;
@@ -423,20 +427,28 @@ function App() {
       return;
     }
     
-    let mode = selectedMode === 'mixed' 
-      ? ['reading', 'meaning', 'turkish', 'writing'][Math.floor(Math.random() * 4)] 
-      : selectedMode;
-
-    // Check if we need to fallback due to missing data
-    if (mode === 'reading' && !hasValidReading) {
-      mode = hasValidEnglish ? 'meaning' : hasValidTurkish ? 'turkish' : 'reading';
-    } else if (mode === 'meaning' && !hasValidEnglish) {
-      mode = hasValidTurkish ? 'turkish' : hasValidReading ? 'reading' : 'meaning';
-    } else if (mode === 'turkish' && !hasValidTurkish) {
-      mode = hasValidEnglish ? 'meaning' : hasValidReading ? 'reading' : 'turkish';
-    } else if (mode === 'writing' && !hasValidReading) {
-      mode = hasValidEnglish ? 'meaning' : hasValidTurkish ? 'turkish' : 'meaning';
+    // Çoklu moddan uygun olanları seç
+    const availableModes = [];
+    if (hasValidReading) {
+      availableModes.push('reading');
+      availableModes.push('writing');
     }
+    if (hasValidEnglish) availableModes.push('meaning');
+    if (hasValidTurkish) availableModes.push('turkish');
+    
+    // Seçili modlardan uygun olanları filtrele
+    let eligibleModes = [];
+    if (selectedModes.includes('mixed')) {
+      eligibleModes = availableModes;
+    } else {
+      eligibleModes = selectedModes.filter(mode => availableModes.includes(mode));
+      // Eğer seçili modlardan hiçbiri uygun değilse tüm uygun modları kullan
+      if (eligibleModes.length === 0) {
+        eligibleModes = availableModes;
+      }
+    }
+    
+    let mode = eligibleModes[Math.floor(Math.random() * eligibleModes.length)];
 
     setCurrentWord(word);
     setQuizMode(mode);
@@ -629,35 +641,83 @@ function App() {
           </div>
 
           <div className="section">
-            <h3 className="section-title">SORU MODU</h3>
+            <h3 className="section-title">SORU MODLARI</h3>
             <div className="mode-buttons">
               <button 
-                className={`mode-btn ${selectedMode === 'mixed' ? 'active' : ''}`}
-                onClick={() => setSaveState(prev => ({ ...prev, selectedMode: 'mixed' }))}
+                className={`mode-btn ${selectedModes.includes('mixed') ? 'active' : ''}`}
+                onClick={() => {
+                  // Karışık seçildiğinde diğerlerinin seçimini kaldır
+                  if (!selectedModes.includes('mixed')) {
+                    setSaveState(prev => ({ ...prev, selectedModes: ['mixed'] }));
+                  }
+                }}
               >
                 Karışık
               </button>
               <button 
-                className={`mode-btn ${selectedMode === 'meaning' ? 'active' : ''}`}
-                onClick={() => setSaveState(prev => ({ ...prev, selectedMode: 'meaning' }))}
+                className={`mode-btn ${selectedModes.includes('meaning') && !selectedModes.includes('mixed') ? 'active' : ''}`}
+                onClick={() => {
+                  let newModes;
+                  if (selectedModes.includes('meaning')) {
+                    // Eğer zaten seçiliyse kaldır
+                    newModes = selectedModes.filter(m => m !== 'meaning');
+                    // Eğer hiç mod kalmadıysa karışık seç
+                    if (newModes.length === 0) newModes = ['mixed'];
+                  } else {
+                    // Karışık modunu kaldır ve yeni modu ekle
+                    newModes = selectedModes.filter(m => m !== 'mixed');
+                    newModes.push('meaning');
+                  }
+                  setSaveState(prev => ({ ...prev, selectedModes: newModes }));
+                }}
               >
                 İngilizce Anlam
               </button>
               <button 
-                className={`mode-btn ${selectedMode === 'turkish' ? 'active' : ''}`}
-                onClick={() => setSaveState(prev => ({ ...prev, selectedMode: 'turkish' }))}
+                className={`mode-btn ${selectedModes.includes('turkish') && !selectedModes.includes('mixed') ? 'active' : ''}`}
+                onClick={() => {
+                  let newModes;
+                  if (selectedModes.includes('turkish')) {
+                    newModes = selectedModes.filter(m => m !== 'turkish');
+                    if (newModes.length === 0) newModes = ['mixed'];
+                  } else {
+                    newModes = selectedModes.filter(m => m !== 'mixed');
+                    newModes.push('turkish');
+                  }
+                  setSaveState(prev => ({ ...prev, selectedModes: newModes }));
+                }}
               >
                 Türkçe Anlam
               </button>
               <button 
-                className={`mode-btn ${selectedMode === 'reading' ? 'active' : ''}`}
-                onClick={() => setSaveState(prev => ({ ...prev, selectedMode: 'reading' }))}
+                className={`mode-btn ${selectedModes.includes('reading') && !selectedModes.includes('mixed') ? 'active' : ''}`}
+                onClick={() => {
+                  let newModes;
+                  if (selectedModes.includes('reading')) {
+                    newModes = selectedModes.filter(m => m !== 'reading');
+                    if (newModes.length === 0) newModes = ['mixed'];
+                  } else {
+                    newModes = selectedModes.filter(m => m !== 'mixed');
+                    newModes.push('reading');
+                  }
+                  setSaveState(prev => ({ ...prev, selectedModes: newModes }));
+                }}
               >
                 Okunuş
               </button>
               <button 
-                className={`mode-btn ${selectedMode === 'writing' ? 'active' : ''}`}
-                onClick={() => setSaveState(prev => ({ ...prev, selectedMode: 'writing' }))}
+                className={`mode-btn ${selectedModes.includes('writing') && !selectedModes.includes('mixed') ? 'active' : ''}`}
+                onClick={() => {
+                  let newModes;
+                  if (selectedModes.includes('writing')) {
+                    newModes = selectedModes.filter(m => m !== 'writing');
+                    if (newModes.length === 0) newModes = ['mixed'];
+                  } else {
+                    newModes = selectedModes.filter(m => m !== 'mixed');
+                    newModes.push('writing');
+                  }
+                  setSaveState(prev => ({ ...prev, selectedModes: newModes }));
+                }}
               >
                 Yazma
               </button>
@@ -939,96 +999,83 @@ function App() {
             <div className="kanji-display">{currentWord.kanji}</div>
             <div className="word-display">{currentWord.word}</div>
             
-            {quizMode === 'reading' && (
-              <div className="mode-section">
-                <h3>Okunuşunu seçin:</h3>
-                <div className="options-grid">
-                  {options.map((opt, i) => (
-                    <button
-                      key={i}
-                      className={`option-btn ${feedback ? (opt === currentWord.reading ? 'correct' : 'incorrect') : ''}`}
-                      onClick={() => handleAnswer(opt)}
-                      disabled={feedback}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {quizMode === 'meaning' && (
-              <div className="mode-section">
-                <h3>İngilizce anlamını seçin:</h3>
-                <div className="options-grid">
-                  {options.map((opt, i) => (
-                    <button
-                      key={i}
-                      className={`option-btn ${feedback ? (opt === currentWord.english ? 'correct' : 'incorrect') : ''}`}
-                      onClick={() => handleAnswer(opt)}
-                      disabled={feedback}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {quizMode === 'turkish' && (
-              <div className="mode-section">
-                <h3>Türkçe anlamını seçin:</h3>
-                <div className="options-grid">
-                  {options.map((opt, i) => (
-                    <button
-                      key={i}
-                      className={`option-btn ${feedback ? (opt === currentWord.turkish ? 'correct' : 'incorrect') : ''}`}
-                      onClick={() => handleAnswer(opt)}
-                      disabled={feedback}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {quizMode === 'writing' && (
-              <div className="mode-section">
-                <h3>Okunuşunu yazın (romaji):</h3>
-                <input
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && !feedback && handleAnswer()}
-                  className="reading-input"
-                  disabled={feedback}
-                  placeholder="Örnek: genki"
-                />
-                <div className="kana-preview">{toKana(inputValue.toLowerCase())}</div>
-                {!feedback && (
-                  <button className="submit-btn" onClick={() => handleAnswer()}>
-                    Gönder
-                  </button>
-                )}
-                {feedback && (
-                  <div className="feedback-details">
-                    <div className={`feedback ${feedback}`}>
-                      {feedback === 'correct' ? '✓ Doğru!' : '✗ Yanlış!'}
-                    </div>
-                    <div className="word-details">
-                      <div className="detail-word">{currentWord.word}</div>
-                      <div className="detail-reading">Okunuş: {currentWord.reading}</div>
-                      <div className="detail-meaning">İngilizce: {currentWord.english}</div>
-                      <div className="detail-meaning">Türkçe: {currentWord.turkish}</div>
+            {!feedback ? (
+              <>
+                {quizMode === 'reading' && (
+                  <div className="mode-section">
+                    <h3>Okunuşunu seçin:</h3>
+                    <div className="options-grid">
+                      {options.map((opt, i) => (
+                        <button
+                          key={i}
+                          className="option-btn"
+                          onClick={() => handleAnswer(opt)}
+                          disabled={feedback}
+                        >
+                          {opt}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
-              </div>
-            )}
 
-            {quizMode !== 'writing' && feedback && (
-              <div className="feedback-details">
+                {quizMode === 'meaning' && (
+                  <div className="mode-section">
+                    <h3>İngilizce anlamını seçin:</h3>
+                    <div className="options-grid">
+                      {options.map((opt, i) => (
+                        <button
+                          key={i}
+                          className="option-btn"
+                          onClick={() => handleAnswer(opt)}
+                          disabled={feedback}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {quizMode === 'turkish' && (
+                  <div className="mode-section">
+                    <h3>Türkçe anlamını seçin:</h3>
+                    <div className="options-grid">
+                      {options.map((opt, i) => (
+                        <button
+                          key={i}
+                          className="option-btn"
+                          onClick={() => handleAnswer(opt)}
+                          disabled={feedback}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {quizMode === 'writing' && (
+                  <div className="mode-section">
+                    <h3>Okunuşunu yazın (romaji):</h3>
+                    <input
+                      type="text"
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && !feedback && handleAnswer()}
+                      className="reading-input"
+                      disabled={feedback}
+                      placeholder="Örnek: genki"
+                    />
+                    <div className="kana-preview">{toKana(inputValue.toLowerCase())}</div>
+                    <button className="submit-btn" onClick={() => handleAnswer()}>
+                      Gönder
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="feedback-details-centered">
                 <div className={`feedback ${feedback}`}>
                   {feedback === 'correct' ? '✓ Doğru!' : '✗ Yanlış!'}
                 </div>

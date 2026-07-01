@@ -184,13 +184,13 @@ function App() {
     return [...readings];
   };
 
-  // Collect all valid meanings
+  // Collect all valid meanings (only Turkish now)
   const collectMeanings = () => {
     const meanings = new Set();
     kanjiData.forEach((entry) => {
       if (entry.vocabulary) {
         entry.vocabulary.forEach((v) => {
-          const val = v.turkish || v.english;
+          const val = v.turkish;
           if (isValidOption(val)) meanings.add(val);
         });
       }
@@ -216,13 +216,14 @@ function App() {
     if (window.confirm('Tüm ilerlemenizi silmek istediğinizden emin misiniz?')) {
       localStorage.removeItem('kanji_save_state');
       setSaveState({
-        selectedMode: 'mixed',
+        selectedModes: ['mixed'],
         lastSectionIndex: null,
         progress: {},
         kanjiIndex: 0,
         bossLevel: 1,
         completedKanjis: [],
-        completedWords: []
+        completedWords: [],
+        customGroups: []
       });
       window.location.reload();
     }
@@ -360,7 +361,6 @@ function App() {
       const hasWord = kanji.vocabulary?.some(v => 
         v.word.toLowerCase().includes(query) ||
         v.reading.toLowerCase().includes(query) ||
-        v.english.toLowerCase().includes(query) ||
         (v.turkish && v.turkish.toLowerCase().includes(query))
       );
       return hasKanji || hasWord;
@@ -370,7 +370,6 @@ function App() {
         kanji.vocabulary?.some(v => 
           v.word.toLowerCase().includes(query) ||
           v.reading.toLowerCase().includes(query) ||
-          v.english.toLowerCase().includes(query) ||
           (v.turkish && v.turkish.toLowerCase().includes(query))
         )
       );
@@ -411,10 +410,9 @@ function App() {
     
     // Check if word has any valid answer
     const hasValidReading = isValidOption(word.reading);
-    const hasValidEnglish = isValidOption(word.english);
     const hasValidTurkish = isValidOption(word.turkish);
     
-    if (!hasValidReading && !hasValidEnglish && !hasValidTurkish) {
+    if (!hasValidReading && !hasValidTurkish) {
       // No valid answers for this word, try next
       console.warn(`Skipping invalid word: ${word.word}`, word);
       if (currentIdx < currentQuiz.length - 1) {
@@ -433,7 +431,6 @@ function App() {
       availableModes.push('reading');
       availableModes.push('writing');
     }
-    if (hasValidEnglish) availableModes.push('meaning');
     if (hasValidTurkish) availableModes.push('turkish');
     
     // Seçili modlardan uygun olanları filtrele
@@ -458,12 +455,11 @@ function App() {
     if (mode !== 'writing') {
       let correctAnswer;
       if (mode === 'reading') correctAnswer = word.reading;
-      else if (mode === 'meaning') correctAnswer = word.english;
       else if (mode === 'turkish') correctAnswer = word.turkish;
       
       // Final fallback for correct answer
       if (!isValidOption(correctAnswer)) {
-        correctAnswer = word.english || word.turkish || word.reading || word.word;
+        correctAnswer = word.turkish || word.reading || word.word;
       }
       
       const options = buildOptions(correctAnswer, mode);
@@ -478,8 +474,6 @@ function App() {
     
     if (quizMode === 'reading') {
       isCorrect = answer === currentWord.reading;
-    } else if (quizMode === 'meaning') {
-      isCorrect = answer === currentWord.english;
     } else if (quizMode === 'turkish') {
       isCorrect = answer === currentWord.turkish;
     } else if (quizMode === 'writing') {
@@ -653,25 +647,6 @@ function App() {
                 }}
               >
                 Karışık
-              </button>
-              <button 
-                className={`mode-btn ${selectedModes.includes('meaning') && !selectedModes.includes('mixed') ? 'active' : ''}`}
-                onClick={() => {
-                  let newModes;
-                  if (selectedModes.includes('meaning')) {
-                    // Eğer zaten seçiliyse kaldır
-                    newModes = selectedModes.filter(m => m !== 'meaning');
-                    // Eğer hiç mod kalmadıysa karışık seç
-                    if (newModes.length === 0) newModes = ['mixed'];
-                  } else {
-                    // Karışık modunu kaldır ve yeni modu ekle
-                    newModes = selectedModes.filter(m => m !== 'mixed');
-                    newModes.push('meaning');
-                  }
-                  setSaveState(prev => ({ ...prev, selectedModes: newModes }));
-                }}
-              >
-                İngilizce Anlam
               </button>
               <button 
                 className={`mode-btn ${selectedModes.includes('turkish') && !selectedModes.includes('mixed') ? 'active' : ''}`}
@@ -1082,7 +1057,6 @@ function App() {
                 <div className="word-details">
                   <div className="detail-word">{currentWord.word}</div>
                   <div className="detail-reading">Okunuş: {currentWord.reading}</div>
-                  <div className="detail-meaning">İngilizce: {currentWord.english}</div>
                   <div className="detail-meaning">Türkçe: {currentWord.turkish}</div>
                 </div>
               </div>
@@ -1117,7 +1091,7 @@ function App() {
                       <div>
                         <div className="vocab-word">{v.word}</div>
                         <div className="vocab-reading">{v.reading}</div>
-                        <div className="vocab-meaning">{v.english} • {v.turkish}</div>
+                        <div className="vocab-meaning">{v.turkish}</div>
                         {wordProgress && (
                           <div className="vocab-progress">
                             {wordProgress.correct}/{wordProgress.attempts} doğru
@@ -1238,7 +1212,6 @@ function App() {
                     k.vocabulary?.some(v => 
                       v.word.toLowerCase().includes(q) ||
                       v.reading.toLowerCase().includes(q) ||
-                      v.english.toLowerCase().includes(q) ||
                       (v.turkish && v.turkish.toLowerCase().includes(q))
                     )
                   );

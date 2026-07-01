@@ -994,23 +994,7 @@ function App() {
                   </div>
                 )}
 
-                {quizMode === 'meaning' && (
-                  <div className="mode-section">
-                    <h3>İngilizce anlamını seçin:</h3>
-                    <div className="options-grid">
-                      {options.map((opt, i) => (
-                        <button
-                          key={i}
-                          className="option-btn"
-                          onClick={() => handleAnswer(opt)}
-                          disabled={feedback}
-                        >
-                          {opt}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+
 
                 {quizMode === 'turkish' && (
                   <div className="mode-section">

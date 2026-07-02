@@ -618,6 +618,31 @@ body {
   font-size: 20px;
   color: #888;
   margin-bottom: 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+}
+
+.timer {
+  font-size: 24px;
+  font-weight: bold;
+  color: #c9a962;
+  transition: color 0.3s ease;
+}
+
+.timer.urgent {
+  color: #ff4444;
+  animation: pulse 0.5s infinite alternate;
+}
+
+@keyframes pulse {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.1);
+  }
 }
 
 .question-card {

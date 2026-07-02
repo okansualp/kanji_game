@@ -16,6 +16,8 @@ function App() {
   const [selectedKanji, setSelectedKanji] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedGroups, setExpandedGroups] = useState(['A']); // Varsayılan olarak A grubu açık
+  const [timeLeft, setTimeLeft] = useState(3);
+  const [timerActive, setTimerActive] = useState(false);
   
   // Özel grup özellikleri
   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
@@ -238,6 +240,24 @@ function App() {
     }
   }, [saveState]);
 
+  // Timer useEffect
+  useEffect(() => {
+    let interval;
+    if (timerActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            setTimerActive(false);
+            handleAnswer(); // Süre dolduğunda otomatik olarak cevapla
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [timerActive, timeLeft]);
+
   const createSections = () => {
     const sections = [];
     let kanjiCount = 0;
@@ -451,6 +471,8 @@ function App() {
     setQuizMode(mode);
     setInputValue('');
     setFeedback(null);
+    setTimeLeft(3);
+    setTimerActive(true);
 
     if (mode !== 'writing') {
       let correctAnswer;
@@ -470,6 +492,7 @@ function App() {
   const handleAnswer = (answer) => {
     if (!currentWord || feedback) return;
 
+    setTimerActive(false);
     let isCorrect = false;
     
     if (quizMode === 'reading') {
@@ -968,6 +991,11 @@ function App() {
           
           <div className="quiz-progress">
             {quizIndex + 1}/{currentQuiz.length}
+            {!feedback && (
+              <div className={`timer ${timeLeft <= 1 ? 'urgent' : ''}`}>
+                ⏱️ {timeLeft}s
+              </div>
+            )}
           </div>
 
           <div className="question-card">

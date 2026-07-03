@@ -471,7 +471,10 @@ function App() {
     setQuizMode(mode);
     setInputValue('');
     setFeedback(null);
-    setTimeLeft(3);
+    
+    // Sadece yazma modu seçiliyse 10 saniye, diğer durumlarda 3 saniye
+    const isOnlyWritingMode = selectedModes.length === 1 && selectedModes[0] === 'writing';
+    setTimeLeft(isOnlyWritingMode ? 10 : 3);
     setTimerActive(true);
 
     if (mode !== 'writing') {

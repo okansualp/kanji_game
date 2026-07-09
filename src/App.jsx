@@ -37,7 +37,8 @@ function App() {
         bossLevel: 1,
         completedKanjis: [],
         completedWords: [],
-        customGroups: [] // Yeni: özel gruplar
+        customGroups: [], // Yeni: özel gruplar
+        timerEnabled: true // Yeni: zamanlayıcı açık/kapalı
       };
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -58,7 +59,8 @@ function App() {
         bossLevel: 1,
         completedKanjis: [],
         completedWords: [],
-        customGroups: []
+        customGroups: [],
+        timerEnabled: true
       };
     }
   });
@@ -71,6 +73,7 @@ function App() {
   const bossLevel = saveState.bossLevel;
   const completedKanjis = new Set(saveState.completedKanjis);
   const completedWords = new Set(saveState.completedWords);
+  const timerEnabled = saveState.timerEnabled;
 
   // Validate helper function
   const isValidOption = (val) => {
@@ -475,7 +478,7 @@ function App() {
     // Sadece yazma modu seçiliyse 10 saniye, diğer durumlarda 3 saniye
     const isOnlyWritingMode = selectedModes.length === 1 && selectedModes[0] === 'writing';
     setTimeLeft(isOnlyWritingMode ? 10 : 3);
-    setTimerActive(true);
+    setTimerActive(timerEnabled);
 
     if (mode !== 'writing') {
       let correctAnswer;
@@ -723,6 +726,17 @@ function App() {
                 Yazma
               </button>
             </div>
+          </div>
+
+          <div className="section">
+            <button 
+              className={`timer-toggle-btn ${timerEnabled ? 'active' : ''}`}
+              onClick={() => {
+                setSaveState(prev => ({ ...prev, timerEnabled: !prev.timerEnabled }));
+              }}
+            >
+              {timerEnabled ? '⏱️ Süre Sınırı: Açık' : '⏱️ Süre Sınırı: Kapalı'}
+            </button>
           </div>
 
           {/* Review Mode Button */}
@@ -994,7 +1008,7 @@ function App() {
           
           <div className="quiz-progress">
             {quizIndex + 1}/{currentQuiz.length}
-            {!feedback && (
+            {!feedback && timerEnabled && (
               <div className={`timer ${timeLeft <= 1 ? 'urgent' : ''}`}>
                 ⏱️ {timeLeft}s
               </div>

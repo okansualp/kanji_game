@@ -229,6 +229,29 @@ body {
   font-weight: normal;
 }
 
+.timer-toggle-btn {
+  width: 100%;
+  padding: 15px;
+  font-size: 18px;
+  background: #1e1e1e;
+  border: 2px solid #333;
+  border-radius: 12px;
+  color: #888;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.timer-toggle-btn:hover {
+  border-color: #555;
+}
+
+.timer-toggle-btn.active {
+  background: rgba(201, 169, 98, 0.15);
+  border-color: #c9a962;
+  color: #c9a962;
+}
+
 /* Özel Grup Stilleri */
 .create-group-btn {
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);

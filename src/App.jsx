@@ -287,13 +287,16 @@ function App() {
       
       const filteredVocab = filterVocabulary(kanji.vocabulary || []);
       
-      sections.push({
-        type: 'kanji',
-        id: `kanji-${index}`,
-        title: `Bölüm ${normalSectionCount}`,
-        kanji: kanji,
-        words: filteredVocab.map(v => ({ ...v, kanji: kanji.kanji }))
-      });
+      // Eğer kelime sayısı > 0 ise bölüm ekle
+      if (filteredVocab.length > 0 || selectedLevel === 'all') {
+        sections.push({
+          type: 'kanji',
+          id: `kanji-${index}`,
+          title: `Bölüm ${normalSectionCount}`,
+          kanji: kanji,
+          words: filteredVocab.map(v => ({ ...v, kanji: kanji.kanji }))
+        });
+      }
 
       if (kanjiCount % 10 === 0 && kanjiCount > 0) {
         const startIndex = Math.max(0, kanjiCount - 10);
@@ -304,14 +307,17 @@ function App() {
           filteredK.forEach(v => bossWords.push({ ...v, kanji: k.kanji }));
         });
         
-        sections.push({
-          type: 'mini-boss',
-          id: `mini-boss-${kanjiCount / 10}`,
-          title: `🔥 Mini Boss: Son 10 Kanji`,
-          subtitle: `Kanji ${kanjiCount - 9} - ${kanjiCount}`,
-          kanjiList: bossKanji,
-          words: bossWords
-        });
+        // Eğer boss kelimeleri varsa ekle
+        if (bossWords.length > 0 || selectedLevel === 'all') {
+          sections.push({
+            type: 'mini-boss',
+            id: `mini-boss-${kanjiCount / 10}`,
+            title: `🔥 Mini Boss: Son 10 Kanji`,
+            subtitle: `Kanji ${kanjiCount - 9} - ${kanjiCount}`,
+            kanjiList: bossKanji,
+            words: bossWords
+          });
+        }
       }
 
       if (kanjiCount % 50 === 0 && kanjiCount > 0) {
@@ -323,23 +329,31 @@ function App() {
           filteredK.forEach(v => bossWords.push({ ...v, kanji: k.kanji }));
         });
         
-        sections.push({
-          type: 'big-boss',
-          id: `big-boss-${kanjiCount / 50}`,
-          title: `👹 Büyük Boss: Son 50 Kanji`,
-          subtitle: `Kanji ${kanjiCount - 49} - ${kanjiCount}`,
-          kanjiList: bossKanji,
-          words: bossWords
-        });
+        // Eğer boss kelimeleri varsa ekle
+        if (bossWords.length > 0 || selectedLevel === 'all') {
+          sections.push({
+            type: 'big-boss',
+            id: `big-boss-${kanjiCount / 50}`,
+            title: `👹 Büyük Boss: Son 50 Kanji`,
+            subtitle: `Kanji ${kanjiCount - 49} - ${kanjiCount}`,
+            kanjiList: bossKanji,
+            words: bossWords
+          });
+        }
       }
     });
+
+    // Debug log
+    if (selectedLevel !== 'all') {
+      console.log(`[DEBUG] ${selectedLevel} seviyesinde toplam bölüm sayısı: ${sections.length}`);
+    }
 
     return sections;
   };
 
   const sections = useMemo(() => createSections(), [selectedLevel]);
 
-  // Bölümleri 50'lik gruplara ayır
+  // Bölümleri 50'lik gruplara ayır ve boş grupları filtrele
   const groupSections = () => {
     const groups = [];
     let currentGroup = [];
@@ -348,14 +362,17 @@ function App() {
 
     sections.forEach((section, index) => {
       if (section.type === 'big-boss') {
-        // Büyük boss'tan sonra yeni grup başlat
+        // Büyük boss'tan sonra grubu tamamla
         currentGroup.push(section);
-        groups.push({
-          letter: currentGroupLetter,
-          startKanji: groupStartKanji,
-          endKanji: groupStartKanji + 49,
-          sections: [...currentGroup]
-        });
+        // Grubu yalnızca içinde bölüm varsa ekle
+        if (currentGroup.length > 0) {
+          groups.push({
+            letter: currentGroupLetter,
+            startKanji: groupStartKanji,
+            endKanji: groupStartKanji + 49,
+            sections: [...currentGroup]
+          });
+        }
         currentGroup = [];
         currentGroupLetter = String.fromCharCode(currentGroupLetter.charCodeAt(0) + 1);
         groupStartKanji += 50;
@@ -374,10 +391,15 @@ function App() {
       });
     }
 
+    // Debug log
+    if (selectedLevel !== 'all') {
+      console.log(`[DEBUG] ${selectedLevel} seviyesinde toplam grup sayısı: ${groups.length}`);
+    }
+
     return groups;
   };
 
-  const groups = groupSections();
+  const groups = useMemo(() => groupSections(), [sections]);
 
   const toggleGroup = (letter) => {
     setExpandedGroups(prev => {

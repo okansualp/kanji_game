@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { toKana } from 'wanakana';
 import kanjiData from '../kanji_game_data.json';
 import './App.css';
@@ -31,6 +31,7 @@ function App() {
       const saved = localStorage.getItem('kanji_save_state');
       const defaultState = {
         selectedModes: ['mixed'], // Çoklu mod seçimi
+        selectedLevel: 'all', // Seviye filtresi
         lastSectionIndex: null,
         progress: {},
         kanjiIndex: 0,
@@ -53,6 +54,7 @@ function App() {
       console.error('SaveState yükleme hatası:', e);
       return {
         selectedModes: ['mixed'],
+        selectedLevel: 'all',
         lastSectionIndex: null,
         progress: {},
         kanjiIndex: 0,
@@ -67,6 +69,7 @@ function App() {
 
   // Destructure saveState for easy access
   const selectedModes = saveState.selectedModes;
+  const selectedLevel = saveState.selectedLevel;
   const lastSectionIndex = saveState.lastSectionIndex;
   const progress = saveState.progress;
   const kanjiIndex = saveState.kanjiIndex;
@@ -169,7 +172,13 @@ function App() {
   };
 
   const startCustomGroupQuiz = (group) => {
-    const quizWords = [...group.words].sort(() => Math.random() - 0.5);
+    // Özel grubun kelimelerini de seviyeye göre filtrele
+    const filteredWords = filterVocabulary(group.words);
+    if (filteredWords.length === 0) {
+      alert('Seçili seviyede bu grupta kelime yok!');
+      return;
+    }
+    const quizWords = [...filteredWords].sort(() => Math.random() - 0.5);
     setCurrentQuiz(quizWords);
     setQuizIndex(0);
     startQuestion(quizWords[0]);
@@ -261,6 +270,12 @@ function App() {
     return () => clearInterval(interval);
   }, [timerActive, timeLeft]);
 
+  // Vocabulary'yi seviyeye göre filtrele
+  const filterVocabulary = (vocab) => {
+    if (selectedLevel === 'all') return vocab;
+    return vocab.filter(v => v.word_level === selectedLevel);
+  };
+
   const createSections = () => {
     const sections = [];
     let kanjiCount = 0;
@@ -270,12 +285,14 @@ function App() {
       kanjiCount++;
       normalSectionCount++;
       
+      const filteredVocab = filterVocabulary(kanji.vocabulary || []);
+      
       sections.push({
         type: 'kanji',
         id: `kanji-${index}`,
         title: `Bölüm ${normalSectionCount}`,
         kanji: kanji,
-        words: kanji.vocabulary ? kanji.vocabulary.map(v => ({ ...v, kanji: kanji.kanji })) : []
+        words: filteredVocab.map(v => ({ ...v, kanji: kanji.kanji }))
       });
 
       if (kanjiCount % 10 === 0 && kanjiCount > 0) {
@@ -283,9 +300,8 @@ function App() {
         const bossKanji = kanjiData.slice(startIndex, kanjiCount);
         const bossWords = [];
         bossKanji.forEach(k => {
-          if (k.vocabulary) {
-            k.vocabulary.forEach(v => bossWords.push({ ...v, kanji: k.kanji }));
-          }
+          const filteredK = filterVocabulary(k.vocabulary || []);
+          filteredK.forEach(v => bossWords.push({ ...v, kanji: k.kanji }));
         });
         
         sections.push({
@@ -303,9 +319,8 @@ function App() {
         const bossKanji = kanjiData.slice(startIndex, kanjiCount);
         const bossWords = [];
         bossKanji.forEach(k => {
-          if (k.vocabulary) {
-            k.vocabulary.forEach(v => bossWords.push({ ...v, kanji: k.kanji }));
-          }
+          const filteredK = filterVocabulary(k.vocabulary || []);
+          filteredK.forEach(v => bossWords.push({ ...v, kanji: k.kanji }));
         });
         
         sections.push({
@@ -322,7 +337,7 @@ function App() {
     return sections;
   };
 
-  const sections = createSections();
+  const sections = useMemo(() => createSections(), [selectedLevel]);
 
   // Bölümleri 50'lik gruplara ayır
   const groupSections = () => {
@@ -725,6 +740,27 @@ function App() {
               >
                 Yazma
               </button>
+            </div>
+          </div>
+
+          <div className="section">
+            <h3 className="section-title">SEVİYE FİLTRESİ</h3>
+            <div className="mode-buttons">
+              {['all', 'N5', 'N4', 'N3', 'N2', 'N1'].map(level => (
+                <button 
+                  key={level}
+                  className={`mode-btn ${selectedLevel === level ? 'active' : ''}`}
+                  onClick={() => {
+                    setSaveState(prev => ({ ...prev, selectedLevel: level }));
+                    // Filtre değiştiğinde quiz oturumunu sıfırla
+                    setScreen('home');
+                    setCurrentQuiz([]);
+                    setQuizIndex(0);
+                  }}
+                >
+                  {level === 'all' ? 'Tümü' : level}
+                </button>
+              ))}
             </div>
           </div>
 

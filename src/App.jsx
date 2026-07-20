@@ -276,6 +276,43 @@ function App() {
     return vocab.filter(v => v.word_level === selectedLevel);
   };
 
+  // Fisher-Yates Shuffle algoritması
+  const shuffleArray = (array) => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  };
+
+  // Tüm filtrelenmiş kelimeleri topla
+  const getAllFilteredWords = () => {
+    const allWords = [];
+    kanjiData.forEach(kanji => {
+      const filtered = filterVocabulary(kanji.vocabulary || []);
+      filtered.forEach(v => {
+        allWords.push({ ...v, kanji: kanji.kanji });
+      });
+    });
+    return allWords;
+  };
+
+  // Rastgele 50 (veya tüm) kelimeyle quiz başlat
+  const startRandom50Quiz = () => {
+    const allFilteredWords = getAllFilteredWords();
+    if (allFilteredWords.length === 0) {
+      alert('Seçili seviyede hiç kelime yok!');
+      return;
+    }
+    const shuffled = shuffleArray(allFilteredWords);
+    const quizWords = shuffled.slice(0, 50);
+    setCurrentQuiz(quizWords);
+    setQuizIndex(0);
+    startQuestion(quizWords[0]);
+    setScreen('quiz');
+  };
+
   const createSections = () => {
     const sections = [];
     let kanjiCount = 0;
@@ -806,6 +843,19 @@ function App() {
               🎯 Hata Yaptığım Kelimeleri Tekrarla
               <span className="review-count">
                 ({getReviewWords().length} kelime)
+              </span>
+            </button>
+          </div>
+
+          {/* Rastgele 50 Button */}
+          <div className="section">
+            <button 
+              className="random-50-btn"
+              onClick={() => startRandom50Quiz()}
+            >
+              🎲 Rastgele 50
+              <span className="random-count">
+                ({Math.min(50, getAllFilteredWords().length)} kelime)
               </span>
             </button>
           </div>

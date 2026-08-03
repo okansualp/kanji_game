@@ -1,10 +1,48 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toKana } from 'wanakana';
 import kanjiData from '../kanji_game_data.json';
 import './App.css';
 
+const JLPT_LEVELS = ['N5', 'N4', 'N3', 'N2', 'N1'];
+const LEVEL_SORT = { N5: 0, N4: 1, N3: 2, N2: 3, N1: 4 };
+
+const defaultSaveState = {
+  selectedCategory: 'vocab',
+  selectedModes: ['mixed'],
+  selectedLevel: 'all',
+  lastSectionIndex: null,
+  lastGrammarSectionId: null,
+  progress: {},
+  kanjiIndex: 0,
+  bossLevel: 1,
+  completedKanjis: [],
+  completedWords: [],
+  customGroups: [],
+  timerEnabled: true
+};
+
+const buildGrammarUrl = (level) => `${import.meta.env.BASE_URL}data/jlpt-grammar/${level}.json`;
+
+const getQuizItemKey = (item) => {
+  if (!item) return '';
+  if (item.type === 'grammar') {
+    return `grammar-${item.level}-${item.id}`;
+  }
+  return `${item.kanji}-${item.word}`;
+};
+
+const normalizeGrammarQuestion = (item) => {
+  const correctAnswer = item.options?.[item.correctIndex] ?? item.answerWord ?? '';
+
+  return {
+    ...item,
+    type: 'grammar',
+    correctAnswer,
+    options: Array.isArray(item.options) ? item.options : []
+  };
+};
+
 function App() {
-  // Güvenlik: Sayfa yenilendiğinde varsayılan olarak ana ekrana dön
   const [screen, setScreen] = useState('home');
   const [currentQuiz, setCurrentQuiz] = useState([]);
   const [quizIndex, setQuizIndex] = useState(0);
@@ -13,254 +51,190 @@ function App() {
   const [inputValue, setInputValue] = useState('');
   const [feedback, setFeedback] = useState(null);
   const [quizMode, setQuizMode] = useState('reading');
+  const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [selectedKanji, setSelectedKanji] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedGroups, setExpandedGroups] = useState(['A']); // Varsayılan olarak A grubu açık
+  const [expandedGroups, setExpandedGroups] = useState(['A']);
   const [timeLeft, setTimeLeft] = useState(3);
   const [timerActive, setTimerActive] = useState(false);
-  
-  // Özel grup özellikleri
+  const [grammarDataByLevel, setGrammarDataByLevel] = useState({});
+  const [grammarLoading, setGrammarLoading] = useState(false);
+  const [grammarLoadError, setGrammarLoadError] = useState('');
+
   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [selectedKanjisForGroup, setSelectedKanjisForGroup] = useState([]);
   const [groupSearchQuery, setGroupSearchQuery] = useState('');
 
-  // Single saveState object for persistence
   const [saveState, setSaveState] = useState(() => {
     try {
       const saved = localStorage.getItem('kanji_save_state');
-      const defaultState = {
-        selectedModes: ['mixed'], // Çoklu mod seçimi
-        selectedLevel: 'all', // Seviye filtresi
-        lastSectionIndex: null,
-        progress: {},
-        kanjiIndex: 0,
-        bossLevel: 1,
-        completedKanjis: [],
-        completedWords: [],
-        customGroups: [], // Yeni: özel gruplar
-        timerEnabled: true // Yeni: zamanlayıcı açık/kapalı
-      };
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Eski tek modlu veriyi çoklu moda çevir
-        if (parsed.selectedMode && !parsed.selectedModes) {
-          return { ...defaultState, ...parsed, selectedModes: [parsed.selectedMode] };
-        }
-        return { ...defaultState, ...parsed };
+      if (!saved) return defaultSaveState;
+
+      const parsed = JSON.parse(saved);
+      if (parsed.selectedMode && !parsed.selectedModes) {
+        return { ...defaultSaveState, ...parsed, selectedModes: [parsed.selectedMode] };
       }
-      return defaultState;
-    } catch (e) {
-      console.error('SaveState yükleme hatası:', e);
-      return {
-        selectedModes: ['mixed'],
-        selectedLevel: 'all',
-        lastSectionIndex: null,
-        progress: {},
-        kanjiIndex: 0,
-        bossLevel: 1,
-        completedKanjis: [],
-        completedWords: [],
-        customGroups: [],
-        timerEnabled: true
-      };
+      return { ...defaultSaveState, ...parsed };
+    } catch (error) {
+      console.error('SaveState yükleme hatası:', error);
+      return defaultSaveState;
     }
   });
 
-  // Destructure saveState for easy access
+  const selectedCategory = saveState.selectedCategory;
   const selectedModes = saveState.selectedModes;
   const selectedLevel = saveState.selectedLevel;
   const lastSectionIndex = saveState.lastSectionIndex;
+  const lastGrammarSectionId = saveState.lastGrammarSectionId;
   const progress = saveState.progress;
-  const kanjiIndex = saveState.kanjiIndex;
-  const bossLevel = saveState.bossLevel;
   const completedKanjis = new Set(saveState.completedKanjis);
   const completedWords = new Set(saveState.completedWords);
   const timerEnabled = saveState.timerEnabled;
 
-  // Validate helper function
   const isValidOption = (val) => {
     if (val === null || val === undefined) return false;
     const s = String(val).trim();
     const lower = s.toLowerCase();
-    return s.length > 0 && 
-           s !== '-' && 
-           s !== '?' &&
-           !lower.includes('bilinmiyor') &&
-           !lower.includes('unknown');
+
+    return (
+      s.length > 0 &&
+      s !== '-' &&
+      s !== '?' &&
+      !lower.includes('bilinmiyor') &&
+      !lower.includes('unknown')
+    );
   };
 
-  // Helper function to check boss level
-  const isBossLevel = (idx) => idx > 0 && (idx + 1) % 50 === 0;
-
-  // Handle kanji complete
-  const handleKanjiComplete = () => { 
-    if (!selectedKanji || completedKanjis.has(selectedKanji.kanji)) return; 
-    setSaveState((prev) => ({ 
-      ...prev, 
-      completedKanjis: [...(prev.completedKanjis ?? []), selectedKanji.kanji], 
-    })); 
-  };
-  
-  // Handle word complete
-  const handleWordComplete = (word) => { 
-    const wordKey = `${word.kanji}-${word.word}`;
-    if (completedWords.has(wordKey)) return; 
-    setSaveState(prev => ({ 
-      ...prev, 
-      completedWords: [...(prev.completedWords ?? []), wordKey], 
-    })); 
-  };
-
-  // Özel grup fonksiyonları
-  const toggleKanjiForGroup = (kanji) => {
-    setSelectedKanjisForGroup(prev => {
-      const isSelected = prev.some(k => k.kanji === kanji.kanji);
-      if (isSelected) {
-        return prev.filter(k => k.kanji !== kanji.kanji);
-      } else {
-        return [...prev, kanji];
-      }
-    });
-  };
-
-  const createCustomGroup = () => {
-    if (!newGroupName.trim()) {
-      alert('Lütfen bir grup adı girin!');
-      return;
+  const shuffleArray = (array) => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
-    if (selectedKanjisForGroup.length < 6 || selectedKanjisForGroup.length > 8) {
-      alert('Lütfen 6-8 arası kanji seçin!');
-      return;
-    }
-    
-    // Grup için kelimeleri topla
-    const groupWords = [];
-    selectedKanjisForGroup.forEach(k => {
-      if (k.vocabulary) {
-        k.vocabulary.forEach(v => groupWords.push({ ...v, kanji: k.kanji }));
-      }
-    });
-    
-    const newGroup = {
-      id: Date.now(),
-      name: newGroupName,
-      kanjis: selectedKanjisForGroup,
-      words: groupWords
-    };
-    
-    setSaveState(prev => ({
-      ...prev,
-      customGroups: [...(prev.customGroups ?? []), newGroup]
-    }));
-    
-    // Modal'ı kapat ve sıfırla
-    setIsCreateGroupModalOpen(false);
-    setNewGroupName('');
-    setSelectedKanjisForGroup([]);
-    setGroupSearchQuery('');
+    return shuffled;
   };
 
-  const deleteCustomGroup = (groupId, e) => {
-    e.stopPropagation();
-    if (window.confirm('Bu grubu silmek istediğinize emin misiniz?')) {
-      setSaveState(prev => ({
-        ...prev,
-        customGroups: prev.customGroups.filter(g => g.id !== groupId)
-      }));
-    }
+  const returnHome = () => {
+    setTimerActive(false);
+    setScreen('home');
   };
 
-  const startCustomGroupQuiz = (group) => {
-    // Özel grubun kelimelerini de seviyeye göre filtrele
-    const filteredWords = filterVocabulary(group.words);
-    if (filteredWords.length === 0) {
-      alert('Seçili seviyede bu grupta kelime yok!');
-      return;
-    }
-    const quizWords = [...filteredWords].sort(() => Math.random() - 0.5);
-    setCurrentQuiz(quizWords);
-    setQuizIndex(0);
-    startQuestion(quizWords[0]);
-    setScreen('quiz');
+  const filterVocabulary = (vocab) => {
+    if (selectedLevel === 'all') return vocab;
+    return vocab.filter((item) => item.word_level === selectedLevel);
   };
 
-  // Collect all valid readings
   const collectReadings = () => {
     const readings = new Set();
     kanjiData.forEach((entry) => {
-      if (entry.vocabulary) {
-        entry.vocabulary.forEach((v) => {
-          if (isValidOption(v.reading)) readings.add(v.reading);
-        });
-      }
+      (entry.vocabulary || []).forEach((vocab) => {
+        if (isValidOption(vocab.reading)) {
+          readings.add(vocab.reading);
+        }
+      });
     });
     return [...readings];
   };
 
-  // Collect all valid meanings (only Turkish now)
   const collectMeanings = () => {
     const meanings = new Set();
     kanjiData.forEach((entry) => {
-      if (entry.vocabulary) {
-        entry.vocabulary.forEach((v) => {
-          const val = v.turkish;
-          if (isValidOption(val)) meanings.add(val);
-        });
-      }
+      (entry.vocabulary || []).forEach((vocab) => {
+        if (isValidOption(vocab.turkish)) {
+          meanings.add(vocab.turkish);
+        }
+      });
     });
     return [...meanings];
   };
 
-  // Build options
   const buildOptions = (correct, mode) => {
     const pool = mode === 'reading' ? collectReadings() : collectMeanings();
-    
-    // Filter valid options, exclude correct
     const validPool = pool.filter((item) => isValidOption(item) && item !== correct);
-    
-    // Pick random distractors
-    const picked = [...validPool].sort(() => Math.random() - 0.5).slice(0, 3);
-    
-    return [correct, ...picked].sort(() => Math.random() - 0.5);
+    const picked = shuffleArray(validPool).slice(0, 3);
+    return shuffleArray([correct, ...picked]);
   };
 
-  // LocalStorage'ı tamamen temizleme fonksiyonu
-  const clearAllData = () => {
-    if (window.confirm('Tüm ilerlemenizi silmek istediğinizden emin misiniz?')) {
-      localStorage.removeItem('kanji_save_state');
-      setSaveState({
-        selectedModes: ['mixed'],
-        lastSectionIndex: null,
-        progress: {},
-        kanjiIndex: 0,
-        bossLevel: 1,
-        completedKanjis: [],
-        completedWords: [],
-        customGroups: []
-      });
-      window.location.reload();
-    }
-  };
-
-  // Single useEffect for saveState
   useEffect(() => {
     try {
       localStorage.setItem('kanji_save_state', JSON.stringify(saveState));
-    } catch (e) {
-      console.error('SaveState kaydetme hatası:', e);
+    } catch (error) {
+      console.error('SaveState kaydetme hatası:', error);
     }
   }, [saveState]);
 
-  // Timer useEffect
+  useEffect(() => {
+    if (selectedCategory !== 'grammar') return undefined;
+
+    const targetLevels = selectedLevel === 'all' ? JLPT_LEVELS : [selectedLevel];
+    const missingLevels = targetLevels.filter((level) => !grammarDataByLevel[level]);
+
+    if (missingLevels.length === 0) {
+      setGrammarLoadError('');
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadGrammarLevels = async () => {
+      setGrammarLoading(true);
+      setGrammarLoadError('');
+
+      const results = await Promise.allSettled(
+        missingLevels.map(async (level) => {
+          const response = await fetch(buildGrammarUrl(level));
+          if (!response.ok) {
+            throw new Error(`${level} verisi yüklenemedi`);
+          }
+          const payload = await response.json();
+          return { level, payload: payload.map(normalizeGrammarQuestion) };
+        })
+      );
+
+      if (cancelled) return;
+
+      const loadedEntries = results
+        .filter((result) => result.status === 'fulfilled')
+        .map((result) => result.value);
+
+      if (loadedEntries.length > 0) {
+        setGrammarDataByLevel((prev) => {
+          const next = { ...prev };
+          loadedEntries.forEach(({ level, payload }) => {
+            next[level] = payload;
+          });
+          return next;
+        });
+      }
+
+      const failedLevels = results
+        .filter((result) => result.status === 'rejected')
+        .map((result, index) => (result.status === 'rejected' ? missingLevels[index] : null))
+        .filter(Boolean);
+
+      if (failedLevels.length > 0) {
+        setGrammarLoadError(`${failedLevels.join(', ')} verisi yüklenemedi.`);
+      }
+
+      setGrammarLoading(false);
+    };
+
+    loadGrammarLevels();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCategory, selectedLevel, grammarDataByLevel]);
+
   useEffect(() => {
     let interval;
     if (timerActive && timeLeft > 0) {
       interval = setInterval(() => {
-        setTimeLeft(prev => {
+        setTimeLeft((prev) => {
           if (prev <= 1) {
             setTimerActive(false);
-            handleAnswer(); // Süre dolduğunda otomatik olarak cevapla
+            handleAnswer();
             return 0;
           }
           return prev - 1;
@@ -270,86 +244,62 @@ function App() {
     return () => clearInterval(interval);
   }, [timerActive, timeLeft]);
 
-  // Vocabulary'yi seviyeye göre filtrele
-  const filterVocabulary = (vocab) => {
-    if (selectedLevel === 'all') return vocab;
-    return vocab.filter(v => v.word_level === selectedLevel);
-  };
-
-  // Fisher-Yates Shuffle algoritması
-  const shuffleArray = (array) => {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  };
-
-  // Tüm filtrelenmiş kelimeleri topla
-  const getAllFilteredWords = () => {
+  const allFilteredWords = useMemo(() => {
     const allWords = [];
-    kanjiData.forEach(kanji => {
-      const filtered = filterVocabulary(kanji.vocabulary || []);
-      filtered.forEach(v => {
-        allWords.push({ ...v, kanji: kanji.kanji });
+    kanjiData.forEach((kanji) => {
+      filterVocabulary(kanji.vocabulary || []).forEach((vocab) => {
+        allWords.push({ ...vocab, kanji: kanji.kanji });
       });
     });
     return allWords;
-  };
+  }, [selectedLevel]);
 
-  // Rastgele 50 (veya tüm) kelimeyle quiz başlat
-  const startRandom50Quiz = () => {
-    const allFilteredWords = getAllFilteredWords();
-    if (allFilteredWords.length === 0) {
-      alert('Seçili seviyede hiç kelime yok!');
-      return;
+  const grammarQuestions = useMemo(() => {
+    if (selectedLevel === 'all') {
+      return JLPT_LEVELS.flatMap((level) => grammarDataByLevel[level] || []);
     }
-    const shuffled = shuffleArray(allFilteredWords);
-    const quizWords = shuffled.slice(0, 50);
-    setCurrentQuiz(quizWords);
-    setQuizIndex(0);
-    startQuestion(quizWords[0]);
-    setScreen('quiz');
-  };
+    return grammarDataByLevel[selectedLevel] || [];
+  }, [grammarDataByLevel, selectedLevel]);
 
-  const createSections = () => {
+  const createVocabSections = () => {
     const sections = [];
     let kanjiCount = 0;
     let normalSectionCount = 0;
 
     kanjiData.forEach((kanji, index) => {
-      kanjiCount++;
-      normalSectionCount++;
-      
+      kanjiCount += 1;
+      normalSectionCount += 1;
+
       const filteredVocab = filterVocabulary(kanji.vocabulary || []);
-      
-      // Eğer kelime sayısı > 0 ise bölüm ekle
+
       if (filteredVocab.length > 0 || selectedLevel === 'all') {
         sections.push({
           type: 'kanji',
+          category: 'vocab',
           id: `kanji-${index}`,
           title: `Bölüm ${normalSectionCount}`,
-          kanji: kanji,
-          words: filteredVocab.map(v => ({ ...v, kanji: kanji.kanji }))
+          kanji,
+          words: filteredVocab.map((vocab) => ({ ...vocab, kanji: kanji.kanji }))
         });
       }
 
-      if (kanjiCount % 10 === 0 && kanjiCount > 0) {
+      if (kanjiCount % 10 === 0) {
         const startIndex = Math.max(0, kanjiCount - 10);
         const bossKanji = kanjiData.slice(startIndex, kanjiCount);
         const bossWords = [];
-        bossKanji.forEach(k => {
-          const filteredK = filterVocabulary(k.vocabulary || []);
-          filteredK.forEach(v => bossWords.push({ ...v, kanji: k.kanji }));
+
+        bossKanji.forEach((item) => {
+          filterVocabulary(item.vocabulary || []).forEach((vocab) => {
+            bossWords.push({ ...vocab, kanji: item.kanji });
+          });
         });
-        
-        // Eğer boss kelimeleri varsa ekle
+
         if (bossWords.length > 0 || selectedLevel === 'all') {
           sections.push({
             type: 'mini-boss',
+            category: 'vocab',
             id: `mini-boss-${kanjiCount / 10}`,
-            title: `🔥 Mini Boss: Son 10 Kanji`,
+            title: '🔥 Mini Boss: Son 10 Kanji',
             subtitle: `Kanji ${kanjiCount - 9} - ${kanjiCount}`,
             kanjiList: bossKanji,
             words: bossWords
@@ -357,21 +307,23 @@ function App() {
         }
       }
 
-      if (kanjiCount % 50 === 0 && kanjiCount > 0) {
+      if (kanjiCount % 50 === 0) {
         const startIndex = Math.max(0, kanjiCount - 50);
         const bossKanji = kanjiData.slice(startIndex, kanjiCount);
         const bossWords = [];
-        bossKanji.forEach(k => {
-          const filteredK = filterVocabulary(k.vocabulary || []);
-          filteredK.forEach(v => bossWords.push({ ...v, kanji: k.kanji }));
+
+        bossKanji.forEach((item) => {
+          filterVocabulary(item.vocabulary || []).forEach((vocab) => {
+            bossWords.push({ ...vocab, kanji: item.kanji });
+          });
         });
-        
-        // Eğer boss kelimeleri varsa ekle
+
         if (bossWords.length > 0 || selectedLevel === 'all') {
           sections.push({
             type: 'big-boss',
+            category: 'vocab',
             id: `big-boss-${kanjiCount / 50}`,
-            title: `👹 Büyük Boss: Son 50 Kanji`,
+            title: '👹 Büyük Boss: Son 50 Kanji',
             subtitle: `Kanji ${kanjiCount - 49} - ${kanjiCount}`,
             kanjiList: bossKanji,
             words: bossWords
@@ -380,36 +332,59 @@ function App() {
       }
     });
 
-    // Debug log
-    if (selectedLevel !== 'all') {
-      console.log(`[DEBUG] ${selectedLevel} seviyesinde toplam bölüm sayısı: ${sections.length}`);
-    }
-
     return sections;
   };
 
-  const sections = useMemo(() => createSections(), [selectedLevel]);
+  const vocabSections = useMemo(() => createVocabSections(), [selectedLevel]);
 
-  // Bölümleri 50'lik gruplara ayır ve boş grupları filtrele
-  const groupSections = () => {
+  const grammarSections = useMemo(() => {
+    const grouped = new Map();
+
+    grammarQuestions.forEach((question) => {
+      const key = `${question.level}-${question.practiceSet}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          type: 'grammar-set',
+          category: 'grammar',
+          id: `grammar-${question.level}-${question.practiceSet}`,
+          title: selectedLevel === 'all' ? `${question.level} • ${question.practiceSet}` : question.practiceSet,
+          subtitle: `${question.options.length > 0 ? question.options.length : 4} şıklı • ${question.level}`,
+          level: question.level,
+          practiceSet: question.practiceSet,
+          words: []
+        });
+      }
+
+      grouped.get(key).words.push(question);
+    });
+
+    return [...grouped.values()]
+      .map((section) => ({
+        ...section,
+        subtitle: `${section.words.length} soru • ${section.level}`,
+        previewQuestions: section.words.slice(0, 2)
+      }))
+      .sort((a, b) => {
+        const levelDiff = LEVEL_SORT[a.level] - LEVEL_SORT[b.level];
+        if (levelDiff !== 0) return levelDiff;
+        return a.practiceSet.localeCompare(b.practiceSet, undefined, { numeric: true });
+      });
+  }, [grammarQuestions, selectedLevel]);
+
+  const groupVocabSections = (sections) => {
     const groups = [];
     let currentGroup = [];
     let currentGroupLetter = 'A';
     let groupStartKanji = 1;
 
-    sections.forEach((section, index) => {
+    sections.forEach((section) => {
       if (section.type === 'big-boss') {
-        // Büyük boss'tan sonra grubu tamamla
         currentGroup.push(section);
-        // Grubu yalnızca içinde bölüm varsa ekle
-        if (currentGroup.length > 0) {
-          groups.push({
-            letter: currentGroupLetter,
-            startKanji: groupStartKanji,
-            endKanji: groupStartKanji + 49,
-            sections: [...currentGroup]
-          });
-        }
+        groups.push({
+          id: currentGroupLetter,
+          title: `Kanji ${groupStartKanji} - ${groupStartKanji + 49}`,
+          sections: [...currentGroup]
+        });
         currentGroup = [];
         currentGroupLetter = String.fromCharCode(currentGroupLetter.charCodeAt(0) + 1);
         groupStartKanji += 50;
@@ -418,183 +393,430 @@ function App() {
       }
     });
 
-    // Son kalan bölümleri ekle
     if (currentGroup.length > 0) {
       groups.push({
-        letter: currentGroupLetter,
-        startKanji: groupStartKanji,
-        endKanji: Math.min(groupStartKanji + 49, kanjiData.length),
+        id: currentGroupLetter,
+        title: `Kanji ${groupStartKanji} - ${Math.min(groupStartKanji + 49, kanjiData.length)}`,
         sections: currentGroup
       });
-    }
-
-    // Debug log
-    if (selectedLevel !== 'all') {
-      console.log(`[DEBUG] ${selectedLevel} seviyesinde toplam grup sayısı: ${groups.length}`);
     }
 
     return groups;
   };
 
-  const groups = useMemo(() => groupSections(), [sections]);
+  const vocabGroups = useMemo(() => groupVocabSections(vocabSections), [vocabSections]);
 
-  const toggleGroup = (letter) => {
-    setExpandedGroups(prev => {
-      if (prev.includes(letter)) {
-        return prev.filter(l => l !== letter);
-      } else {
-        return [...prev, letter];
+  const grammarGroups = useMemo(() => {
+    if (selectedLevel === 'all') {
+      return JLPT_LEVELS.map((level) => {
+        const sections = grammarSections.filter((section) => section.level === level);
+        return {
+          id: `grammar-${level}`,
+          title: `${level} Setleri`,
+          sections
+        };
+      }).filter((group) => group.sections.length > 0);
+    }
+
+    const groups = [];
+    for (let i = 0; i < grammarSections.length; i += 10) {
+      const chunk = grammarSections.slice(i, i + 10);
+      groups.push({
+        id: `grammar-chunk-${Math.floor(i / 10) + 1}`,
+        title: `${selectedLevel} • Set ${i + 1}-${i + chunk.length}`,
+        sections: chunk
+      });
+    }
+    return groups;
+  }, [grammarSections, selectedLevel]);
+
+  const activeSections = selectedCategory === 'grammar' ? grammarSections : vocabSections;
+  const activeGroups = selectedCategory === 'grammar' ? grammarGroups : vocabGroups;
+  const randomPool = selectedCategory === 'grammar' ? grammarQuestions : allFilteredWords;
+  const reviewItemLabel = selectedCategory === 'grammar' ? 'soru' : 'kelime';
+
+  const filteredSections = useMemo(() => {
+    if (!searchQuery) return activeSections;
+    const query = searchQuery.toLowerCase();
+
+    if (selectedCategory === 'grammar') {
+      return grammarSections.filter((section) => {
+        if (section.title.toLowerCase().includes(query) || section.practiceSet.toLowerCase().includes(query)) {
+          return true;
+        }
+
+        return section.words.some((question) => {
+          const optionText = (question.options || []).join(' ').toLowerCase();
+          return (
+            question.question.toLowerCase().includes(query) ||
+            question.questionWithAnswer.toLowerCase().includes(query) ||
+            question.answerWord.toLowerCase().includes(query) ||
+            optionText.includes(query)
+          );
+        });
+      });
+    }
+
+    return vocabSections.filter((section) => {
+      if (section.type === 'kanji') {
+        return (
+          section.kanji.kanji.includes(searchQuery) ||
+          (section.kanji.vocabulary || []).some((vocab) =>
+            vocab.word.toLowerCase().includes(query) ||
+            String(vocab.reading || '').toLowerCase().includes(query) ||
+            String(vocab.turkish || '').toLowerCase().includes(query)
+          )
+        );
       }
+
+      return section.kanjiList.some((kanji) =>
+        kanji.kanji.includes(searchQuery) ||
+        (kanji.vocabulary || []).some((vocab) =>
+          vocab.word.toLowerCase().includes(query) ||
+          String(vocab.reading || '').toLowerCase().includes(query) ||
+          String(vocab.turkish || '').toLowerCase().includes(query)
+        )
+      );
+    });
+  }, [activeSections, grammarSections, searchQuery, selectedCategory, vocabSections]);
+
+  const getSectionProgress = (section) => {
+    let total = 0;
+    let completed = 0;
+
+    section.words.forEach((item) => {
+      total += 1;
+      const key = getQuizItemKey(item);
+      if (progress[key]?.correct > 0) {
+        completed += 1;
+      }
+    });
+
+    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { completed, total, percentage };
+  };
+
+  const reviewWords = useMemo(() => {
+    const items = [];
+    activeSections.forEach((section) => {
+      section.words.forEach((item) => {
+        const key = getQuizItemKey(item);
+        const itemProgress = progress[key];
+        if (!itemProgress) return;
+
+        const mistakes = itemProgress.attempts - itemProgress.correct;
+        if (mistakes >= 2) {
+          items.push(item);
+        }
+      });
+    });
+    return items;
+  }, [activeSections, progress]);
+
+  const totalStats = useMemo(() => {
+    let total = 0;
+    let completed = 0;
+
+    activeSections.forEach((section) => {
+      section.words.forEach((item) => {
+        total += 1;
+        const key = getQuizItemKey(item);
+        if (progress[key]?.correct > 0) {
+          completed += 1;
+        }
+      });
+    });
+
+    return { completed, total };
+  }, [activeSections, progress]);
+
+  const continueSection = useMemo(() => {
+    if (selectedCategory === 'grammar') {
+      return grammarSections.find((section) => section.id === lastGrammarSectionId) || null;
+    }
+    if (lastSectionIndex === null) return null;
+    return vocabSections[lastSectionIndex] || null;
+  }, [grammarSections, lastGrammarSectionId, lastSectionIndex, selectedCategory, vocabSections]);
+
+  const goToKanjiDetail = (kanji) => {
+    setSelectedKanji(kanji);
+    setScreen('kanjiDetail');
+  };
+
+  const toggleGroup = (groupId) => {
+    setExpandedGroups((prev) => (
+      prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]
+    ));
+  };
+
+  const handleKanjiComplete = () => {
+    if (!selectedKanji || completedKanjis.has(selectedKanji.kanji)) return;
+    setSaveState((prev) => ({
+      ...prev,
+      completedKanjis: [...(prev.completedKanjis || []), selectedKanji.kanji]
+    }));
+  };
+
+  const handleWordComplete = (word) => {
+    const wordKey = `${word.kanji}-${word.word}`;
+    if (completedWords.has(wordKey)) return;
+
+    setSaveState((prev) => ({
+      ...prev,
+      completedWords: [...(prev.completedWords || []), wordKey]
+    }));
+  };
+
+  const toggleKanjiForGroup = (kanji) => {
+    setSelectedKanjisForGroup((prev) => {
+      const isSelected = prev.some((item) => item.kanji === kanji.kanji);
+      return isSelected ? prev.filter((item) => item.kanji !== kanji.kanji) : [...prev, kanji];
     });
   };
 
-  const filteredSections = sections.filter(section => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    
-    if (section.type === 'kanji') {
-      const kanji = section.kanji;
-      const hasKanji = kanji.kanji.includes(searchQuery);
-      const hasWord = kanji.vocabulary?.some(v => 
-        v.word.toLowerCase().includes(query) ||
-        v.reading.toLowerCase().includes(query) ||
-        (v.turkish && v.turkish.toLowerCase().includes(query))
-      );
-      return hasKanji || hasWord;
-    } else {
-      return section.kanjiList.some(kanji => 
-        kanji.kanji.includes(searchQuery) ||
-        kanji.vocabulary?.some(v => 
-          v.word.toLowerCase().includes(query) ||
-          v.reading.toLowerCase().includes(query) ||
-          (v.turkish && v.turkish.toLowerCase().includes(query))
-        )
-      );
+  const createCustomGroup = () => {
+    if (!newGroupName.trim()) {
+      alert('Lütfen bir grup adı girin!');
+      return;
     }
-  });
 
-  const startQuiz = (section, sectionIndex) => {
-    setSaveState(prev => ({
+    if (selectedKanjisForGroup.length < 6 || selectedKanjisForGroup.length > 8) {
+      alert('Lütfen 6-8 arası kanji seçin!');
+      return;
+    }
+
+    const groupWords = [];
+    selectedKanjisForGroup.forEach((kanji) => {
+      (kanji.vocabulary || []).forEach((vocab) => {
+        groupWords.push({ ...vocab, kanji: kanji.kanji });
+      });
+    });
+
+    const newGroup = {
+      id: Date.now(),
+      name: newGroupName,
+      kanjis: selectedKanjisForGroup,
+      words: groupWords
+    };
+
+    setSaveState((prev) => ({
       ...prev,
-      lastSectionIndex: sectionIndex
+      customGroups: [...(prev.customGroups || []), newGroup]
     }));
-    
-    const quizWords = [...section.words].sort(() => Math.random() - 0.5);
-    setCurrentQuiz(quizWords);
-    setQuizIndex(0);
-    startQuestion(quizWords[0]);
-    setScreen('quiz');
+
+    setIsCreateGroupModalOpen(false);
+    setNewGroupName('');
+    setSelectedKanjisForGroup([]);
+    setGroupSearchQuery('');
   };
 
-  const continueLastQuiz = () => {
-    if (lastSectionIndex !== null && sections[lastSectionIndex]) {
-      startQuiz(sections[lastSectionIndex], lastSectionIndex);
+  const deleteCustomGroup = (groupId, event) => {
+    event.stopPropagation();
+    if (!window.confirm('Bu grubu silmek istediğinize emin misiniz?')) return;
+
+    setSaveState((prev) => ({
+      ...prev,
+      customGroups: (prev.customGroups || []).filter((group) => group.id !== groupId)
+    }));
+  };
+
+  const startQuizSession = (items) => {
+    if (!items.length) return;
+    setCurrentQuiz(items);
+    setQuizIndex(0);
+    setScreen('quiz');
+    startQuestion(items[0], 0);
+  };
+
+  const startCustomGroupQuiz = (group) => {
+    const filteredWords = filterVocabulary(group.words || []);
+    if (filteredWords.length === 0) {
+      alert('Seçili seviyede bu grupta kelime yok!');
+      return;
     }
+    startQuizSession(shuffleArray(filteredWords));
+  };
+
+  const startQuiz = (section, sectionIndex = null) => {
+    setSaveState((prev) => ({
+      ...prev,
+      lastSectionIndex: section.category === 'vocab' ? sectionIndex : prev.lastSectionIndex,
+      lastGrammarSectionId: section.category === 'grammar' ? section.id : prev.lastGrammarSectionId
+    }));
+
+    startQuizSession(shuffleArray(section.words));
+  };
+
+  const startRandomQuiz = () => {
+    if (randomPool.length === 0) {
+      alert(
+        selectedCategory === 'grammar'
+          ? 'Seçili seviyede henüz yüklenmiş soru yok!'
+          : 'Seçili seviyede hiç kelime yok!'
+      );
+      return;
+    }
+
+    startQuizSession(shuffleArray(randomPool).slice(0, 50));
+  };
+
+  const startReviewMode = () => {
+    if (reviewWords.length === 0) {
+      alert(`Henüz 2 veya daha fazla hata yaptığınız ${reviewItemLabel} yok! 🎉`);
+      return;
+    }
+
+    startQuizSession(shuffleArray(reviewWords));
+  };
+
+  const reloadGrammarData = () => {
+    setGrammarDataByLevel((prev) => {
+      const next = { ...prev };
+      if (selectedLevel === 'all') {
+        JLPT_LEVELS.forEach((level) => delete next[level]);
+      } else {
+        delete next[selectedLevel];
+      }
+      return next;
+    });
+  };
+
+  const handleCategoryChange = (category) => {
+    setTimerActive(false);
+    setSearchQuery('');
+    setCurrentQuiz([]);
+    setQuizIndex(0);
+    setFeedback(null);
+    setSaveState((prev) => ({ ...prev, selectedCategory: category }));
+    setScreen('home');
+  };
+
+  const handleLevelChange = (level) => {
+    setTimerActive(false);
+    setCurrentQuiz([]);
+    setQuizIndex(0);
+    setFeedback(null);
+    setSaveState((prev) => ({ ...prev, selectedLevel: level }));
+    setScreen('home');
   };
 
   const startQuestion = (word, currentIdx = quizIndex) => {
     if (!word) {
-      // Try next question if this word is invalid
       if (currentIdx < currentQuiz.length - 1) {
         const nextIndex = currentIdx + 1;
         setQuizIndex(nextIndex);
         startQuestion(currentQuiz[nextIndex], nextIndex);
       } else {
-        setScreen('home');
+        returnHome();
       }
       return;
     }
-    
-    // Check if word has any valid answer
+
+    setCurrentWord(word);
+    setInputValue('');
+    setFeedback(null);
+    setSelectedAnswer(null);
+
+    if (word.type === 'grammar') {
+      if (!Array.isArray(word.options) || word.options.length < 2 || !isValidOption(word.correctAnswer)) {
+        if (currentIdx < currentQuiz.length - 1) {
+          const nextIndex = currentIdx + 1;
+          setQuizIndex(nextIndex);
+          startQuestion(currentQuiz[nextIndex], nextIndex);
+        } else {
+          returnHome();
+        }
+        return;
+      }
+
+      setQuizMode('grammar');
+      setOptions(shuffleArray(word.options));
+      setTimeLeft(10);
+      setTimerActive(timerEnabled);
+      return;
+    }
+
     const hasValidReading = isValidOption(word.reading);
     const hasValidTurkish = isValidOption(word.turkish);
-    
+
     if (!hasValidReading && !hasValidTurkish) {
-      // No valid answers for this word, try next
-      console.warn(`Skipping invalid word: ${word.word}`, word);
       if (currentIdx < currentQuiz.length - 1) {
         const nextIndex = currentIdx + 1;
         setQuizIndex(nextIndex);
         startQuestion(currentQuiz[nextIndex], nextIndex);
       } else {
-        setScreen('home');
+        returnHome();
       }
       return;
     }
-    
-    // Çoklu moddan uygun olanları seç
+
     const availableModes = [];
     if (hasValidReading) {
-      availableModes.push('reading');
-      availableModes.push('writing');
+      availableModes.push('reading', 'writing');
     }
-    if (hasValidTurkish) availableModes.push('turkish');
-    
-    // Seçili modlardan uygun olanları filtrele
+    if (hasValidTurkish) {
+      availableModes.push('turkish');
+    }
+
     let eligibleModes = [];
     if (selectedModes.includes('mixed')) {
       eligibleModes = availableModes;
     } else {
-      eligibleModes = selectedModes.filter(mode => availableModes.includes(mode));
-      // Eğer seçili modlardan hiçbiri uygun değilse tüm uygun modları kullan
+      eligibleModes = selectedModes.filter((mode) => availableModes.includes(mode));
       if (eligibleModes.length === 0) {
         eligibleModes = availableModes;
       }
     }
-    
-    let mode = eligibleModes[Math.floor(Math.random() * eligibleModes.length)];
 
-    setCurrentWord(word);
+    const mode = eligibleModes[Math.floor(Math.random() * eligibleModes.length)];
     setQuizMode(mode);
-    setInputValue('');
-    setFeedback(null);
-    
-    // Sadece yazma modu seçiliyse 10 saniye, diğer durumlarda 3 saniye
+
     const isOnlyWritingMode = selectedModes.length === 1 && selectedModes[0] === 'writing';
     setTimeLeft(isOnlyWritingMode ? 10 : 3);
     setTimerActive(timerEnabled);
 
-    if (mode !== 'writing') {
-      let correctAnswer;
-      if (mode === 'reading') correctAnswer = word.reading;
-      else if (mode === 'turkish') correctAnswer = word.turkish;
-      
-      // Final fallback for correct answer
-      if (!isValidOption(correctAnswer)) {
-        correctAnswer = word.turkish || word.reading || word.word;
-      }
-      
-      const options = buildOptions(correctAnswer, mode);
-      setOptions(options);
+    if (mode === 'writing') {
+      setOptions([]);
+      return;
     }
+
+    let correctAnswer = mode === 'reading' ? word.reading : word.turkish;
+    if (!isValidOption(correctAnswer)) {
+      correctAnswer = word.turkish || word.reading || word.word;
+    }
+
+    setOptions(buildOptions(correctAnswer, mode));
   };
 
   const handleAnswer = (answer) => {
     if (!currentWord || feedback) return;
 
     setTimerActive(false);
+    setSelectedAnswer(typeof answer === 'string' ? answer : null);
+
     let isCorrect = false;
-    
+
     if (quizMode === 'reading') {
       isCorrect = answer === currentWord.reading;
     } else if (quizMode === 'turkish') {
       isCorrect = answer === currentWord.turkish;
     } else if (quizMode === 'writing') {
-      const hiraganaInput = toKana(inputValue.toLowerCase());
-      isCorrect = hiraganaInput === currentWord.reading;
+      isCorrect = toKana(inputValue.toLowerCase()) === currentWord.reading;
+    } else if (quizMode === 'grammar') {
+      isCorrect = answer === currentWord.correctAnswer;
     }
 
     setFeedback(isCorrect ? 'correct' : 'incorrect');
 
-    const wordKey = `${currentWord.kanji}-${currentWord.word}`;
-    setSaveState(prev => ({
+    const itemKey = getQuizItemKey(currentWord);
+    setSaveState((prev) => ({
       ...prev,
       progress: {
         ...prev.progress,
-        [wordKey]: {
-          ...prev.progress[wordKey],
-          attempts: (prev.progress[wordKey]?.attempts || 0) + 1,
-          correct: (prev.progress[wordKey]?.correct || 0) + (isCorrect ? 1 : 0)
+        [itemKey]: {
+          ...prev.progress[itemKey],
+          attempts: (prev.progress[itemKey]?.attempts || 0) + 1,
+          correct: (prev.progress[itemKey]?.correct || 0) + (isCorrect ? 1 : 0)
         }
       }
     }));
@@ -603,219 +825,258 @@ function App() {
       if (quizIndex < currentQuiz.length - 1) {
         const nextIndex = quizIndex + 1;
         setQuizIndex(nextIndex);
-        startQuestion(currentQuiz[nextIndex]);
+        startQuestion(currentQuiz[nextIndex], nextIndex);
       } else {
-        setScreen('home');
+        returnHome();
       }
-    }, 3500); // Increased time to read details
+    }, 3500);
   };
 
-  const goToKanjiDetail = (kanji) => {
-    setSelectedKanji(kanji);
-    setScreen('kanjiDetail');
+  const clearAllData = () => {
+    if (!window.confirm('Tüm ilerlemenizi silmek istediğinizden emin misiniz?')) return;
+    localStorage.removeItem('kanji_save_state');
+    setSaveState(defaultSaveState);
+    window.location.reload();
   };
 
-  const getSectionProgress = (section) => {
-    let totalWords = 0;
-    let completedWords = 0;
-    
-    section.words.forEach(word => {
-      const key = `${word.kanji}-${word.word}`;
-      if (progress[key]) {
-        totalWords++;
-        if (progress[key].correct > 0) {
-          completedWords++;
-        }
-      } else {
-        totalWords++;
-      }
-    });
-    
-    const percentage = totalWords > 0 ? Math.round((completedWords / totalWords) * 100) : 0;
-    return { completed: completedWords, total: totalWords, percentage };
-  };
+  const renderSectionCard = (section, sectionIndex = null) => {
+    const sectionProgress = getSectionProgress(section);
 
-  const getKanjiProgress = (kanji) => {
-    if (!kanji.vocabulary) return { total: 0, correct: 0 };
-    let total = 0;
-    let correct = 0;
-    kanji.vocabulary.forEach(v => {
-      const key = `${kanji.kanji}-${v.word}`;
-      if (progress[key]) {
-        total += progress[key].attempts;
-        correct += progress[key].correct;
-      }
-    });
-    return { total, correct };
-  };
-
-  const getTotalStats = () => {
-    let totalWords = 0;
-    let completedWords = 0;
-    sections.forEach(section => {
-      section.words.forEach(word => {
-        totalWords++;
-        const key = `${word.kanji}-${word.word}`;
-        if (progress[key]?.correct > 0) {
-          completedWords++;
-        }
-      });
-    });
-    return { completed: completedWords, total: totalWords };
-  };
-
-  // Get all words with 2+ mistakes
-  const getReviewWords = () => {
-    const reviewWords = [];
-    sections.forEach(section => {
-      section.words.forEach(word => {
-        const key = `${word.kanji}-${word.word}`;
-        const wordProgress = progress[key];
-        if (wordProgress) {
-          const mistakes = wordProgress.attempts - wordProgress.correct;
-          if (mistakes >= 2) {
-            reviewWords.push(word);
-          }
-        }
-      });
-    });
-    return reviewWords;
-  };
-
-  // Start review mode
-  const startReviewMode = () => {
-    const reviewWords = getReviewWords();
-    if (reviewWords.length === 0) {
-      alert('Henüz 2 veya daha fazla hata yaptığınız kelime yok! 🎉');
-      return;
+    if (section.category === 'grammar') {
+      return (
+        <div
+          key={section.id}
+          className="block-card grammar-set"
+          onClick={() => startQuiz(section, sectionIndex)}
+        >
+          <div className="block-header">
+            <h4 className="block-title">{section.title}</h4>
+            <span className="block-status">{section.level}</span>
+          </div>
+          <div className="block-subtitle">{section.subtitle}</div>
+          <div className="grammar-preview">
+            {section.previewQuestions.map((question) => (
+              <div key={question.id} className="grammar-preview-item">
+                {question.question}
+              </div>
+            ))}
+          </div>
+          <div className="block-progress">
+            {sectionProgress.completed}/{sectionProgress.total} soru • %{sectionProgress.percentage}
+          </div>
+        </div>
+      );
     }
-    
-    const quizWords = [...reviewWords].sort(() => Math.random() - 0.5);
-    setCurrentQuiz(quizWords);
-    setQuizIndex(0);
-    startQuestion(quizWords[0]);
-    setScreen('quiz');
+
+    return (
+      <div
+        key={section.id}
+        className={`block-card ${section.type} ${section.type === 'kanji' && completedKanjis.has(section.kanji.kanji) ? 'completed' : ''}`}
+        onClick={() => startQuiz(section, sectionIndex)}
+      >
+        <div className="block-header">
+          <h4 className="block-title">{section.title}</h4>
+          <span className="block-status">
+            {section.type === 'mini-boss' && '🔥 Mini Boss'}
+            {section.type === 'big-boss' && '👹 Büyük Boss'}
+            {section.type === 'kanji' && completedKanjis.has(section.kanji.kanji) && '✅'}
+            {section.type === 'kanji' && !completedKanjis.has(section.kanji.kanji) && section.kanji.kanji}
+          </span>
+        </div>
+
+        {section.subtitle && <div className="block-subtitle">{section.subtitle}</div>}
+
+        {section.type === 'kanji' ? (
+          <>
+            <div className="block-kanji single">
+              <span
+                className="mini-kanji large"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  goToKanjiDetail(section.kanji);
+                }}
+              >
+                {section.kanji.kanji}
+              </span>
+            </div>
+            <div className="vocab-preview">
+              {section.words.slice(0, 2).map((word) => (
+                <div key={`${section.id}-${word.word}`} className="vocab-preview-item">
+                  {word.word}
+                </div>
+              ))}
+              {section.words.length > 2 && (
+                <div className="vocab-preview-more">+{section.words.length - 2} daha</div>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="boss-kanji-list">
+            {section.kanjiList.map((kanji) => (
+              <span
+                key={`${section.id}-${kanji.kanji}`}
+                className="mini-kanji"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  goToKanjiDetail(kanji);
+                }}
+              >
+                {kanji.kanji}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="block-progress">
+          {sectionProgress.completed}/{sectionProgress.total} kelime • %{sectionProgress.percentage}
+        </div>
+      </div>
+    );
   };
 
-  const totalStats = getTotalStats();
+  const headerInfoText = selectedCategory === 'grammar'
+    ? `${grammarQuestions.length} soru • ${grammarSections.length} set${grammarLoading ? ' • yükleniyor...' : ''}`
+    : `${kanjiData.length} kanji • ${vocabGroups.length} grup`;
+
+  const categoryTitle = selectedCategory === 'grammar' ? 'Dilbilgisi Pratiği' : 'Kanji Quiz';
+  const categorySubtitle = selectedCategory === 'grammar'
+    ? 'JLPT cümle tamamlama setleri'
+    : 'Vault notlarından üretildi';
 
   return (
     <div className="app">
       {screen === 'home' && (
         <div className="home-screen">
           <header className="header">
-            <h1 className="title">漢字クイズ</h1>
+            <h1 className="title">{selectedCategory === 'grammar' ? '文法クイズ' : '漢字クイズ'}</h1>
             <p className="subtitle">Vault Quiz</p>
             <div className="header-info">
-              <span>{kanjiData.length} kanji • {groups.length} grup</span>
+              <span>{headerInfoText}</span>
             </div>
           </header>
 
-          <div className="divider"></div>
+          <div className="divider" />
 
           <div className="kanji-display-main">
-            <div className="big-kanji">漢</div>
-            <h2 className="quiz-title">Kanji Quiz</h2>
-            <p className="quiz-subtitle">Vault notlarından üretildi</p>
+            <div className="big-kanji">{selectedCategory === 'grammar' ? '文' : '漢'}</div>
+            <h2 className="quiz-title">{categoryTitle}</h2>
+            <p className="quiz-subtitle">{categorySubtitle}</p>
           </div>
 
-          {lastSectionIndex !== null && sections[lastSectionIndex] && (
+          {continueSection && (
             <div className="continue-section">
-              <button className="continue-btn" onClick={continueLastQuiz}>
-                📚 Devam Et: {sections[lastSectionIndex].title}
+              <button className="continue-btn" onClick={() => startQuiz(continueSection, lastSectionIndex)}>
+                📚 Devam Et: {continueSection.title}
               </button>
             </div>
           )}
+
+          <div className="section">
+            <h3 className="section-title">KATEGORİ</h3>
+            <div className="mode-buttons">
+              <button
+                className={`mode-btn ${selectedCategory === 'vocab' ? 'active' : ''}`}
+                onClick={() => handleCategoryChange('vocab')}
+              >
+                Kanji / Kelime
+              </button>
+              <button
+                className={`mode-btn ${selectedCategory === 'grammar' ? 'active' : ''}`}
+                onClick={() => handleCategoryChange('grammar')}
+              >
+                Cümle Tamamlama
+              </button>
+            </div>
+          </div>
 
           <div className="search-section">
             <input
               type="text"
               className="search-input"
-              placeholder="🔍 Kanji, kelime, okunuş, anlam ara..."
+              placeholder={
+                selectedCategory === 'grammar'
+                  ? '🔍 Set, cümle veya cevap ara...'
+                  : '🔍 Kanji, kelime, okunuş, anlam ara...'
+              }
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(event) => setSearchQuery(event.target.value)}
             />
           </div>
 
-          <div className="section">
-            <h3 className="section-title">SORU MODLARI</h3>
-            <div className="mode-buttons">
-              <button 
-                className={`mode-btn ${selectedModes.includes('mixed') ? 'active' : ''}`}
-                onClick={() => {
-                  // Karışık seçildiğinde diğerlerinin seçimini kaldır
-                  if (!selectedModes.includes('mixed')) {
-                    setSaveState(prev => ({ ...prev, selectedModes: ['mixed'] }));
-                  }
-                }}
-              >
-                Karışık
-              </button>
-              <button 
-                className={`mode-btn ${selectedModes.includes('turkish') && !selectedModes.includes('mixed') ? 'active' : ''}`}
-                onClick={() => {
-                  let newModes;
-                  if (selectedModes.includes('turkish')) {
-                    newModes = selectedModes.filter(m => m !== 'turkish');
-                    if (newModes.length === 0) newModes = ['mixed'];
-                  } else {
-                    newModes = selectedModes.filter(m => m !== 'mixed');
-                    newModes.push('turkish');
-                  }
-                  setSaveState(prev => ({ ...prev, selectedModes: newModes }));
-                }}
-              >
-                Türkçe Anlam
-              </button>
-              <button 
-                className={`mode-btn ${selectedModes.includes('reading') && !selectedModes.includes('mixed') ? 'active' : ''}`}
-                onClick={() => {
-                  let newModes;
-                  if (selectedModes.includes('reading')) {
-                    newModes = selectedModes.filter(m => m !== 'reading');
-                    if (newModes.length === 0) newModes = ['mixed'];
-                  } else {
-                    newModes = selectedModes.filter(m => m !== 'mixed');
-                    newModes.push('reading');
-                  }
-                  setSaveState(prev => ({ ...prev, selectedModes: newModes }));
-                }}
-              >
-                Okunuş
-              </button>
-              <button 
-                className={`mode-btn ${selectedModes.includes('writing') && !selectedModes.includes('mixed') ? 'active' : ''}`}
-                onClick={() => {
-                  let newModes;
-                  if (selectedModes.includes('writing')) {
-                    newModes = selectedModes.filter(m => m !== 'writing');
-                    if (newModes.length === 0) newModes = ['mixed'];
-                  } else {
-                    newModes = selectedModes.filter(m => m !== 'mixed');
-                    newModes.push('writing');
-                  }
-                  setSaveState(prev => ({ ...prev, selectedModes: newModes }));
-                }}
-              >
-                Yazma
-              </button>
+          {selectedCategory === 'vocab' && (
+            <div className="section">
+              <h3 className="section-title">SORU MODLARI</h3>
+              <div className="mode-buttons">
+                <button
+                  className={`mode-btn ${selectedModes.includes('mixed') ? 'active' : ''}`}
+                  onClick={() => {
+                    if (!selectedModes.includes('mixed')) {
+                      setSaveState((prev) => ({ ...prev, selectedModes: ['mixed'] }));
+                    }
+                  }}
+                >
+                  Karışık
+                </button>
+                <button
+                  className={`mode-btn ${selectedModes.includes('turkish') && !selectedModes.includes('mixed') ? 'active' : ''}`}
+                  onClick={() => {
+                    let newModes;
+                    if (selectedModes.includes('turkish')) {
+                      newModes = selectedModes.filter((mode) => mode !== 'turkish');
+                      if (newModes.length === 0) newModes = ['mixed'];
+                    } else {
+                      newModes = selectedModes.filter((mode) => mode !== 'mixed');
+                      newModes.push('turkish');
+                    }
+                    setSaveState((prev) => ({ ...prev, selectedModes: newModes }));
+                  }}
+                >
+                  Türkçe Anlam
+                </button>
+                <button
+                  className={`mode-btn ${selectedModes.includes('reading') && !selectedModes.includes('mixed') ? 'active' : ''}`}
+                  onClick={() => {
+                    let newModes;
+                    if (selectedModes.includes('reading')) {
+                      newModes = selectedModes.filter((mode) => mode !== 'reading');
+                      if (newModes.length === 0) newModes = ['mixed'];
+                    } else {
+                      newModes = selectedModes.filter((mode) => mode !== 'mixed');
+                      newModes.push('reading');
+                    }
+                    setSaveState((prev) => ({ ...prev, selectedModes: newModes }));
+                  }}
+                >
+                  Okunuş
+                </button>
+                <button
+                  className={`mode-btn ${selectedModes.includes('writing') && !selectedModes.includes('mixed') ? 'active' : ''}`}
+                  onClick={() => {
+                    let newModes;
+                    if (selectedModes.includes('writing')) {
+                      newModes = selectedModes.filter((mode) => mode !== 'writing');
+                      if (newModes.length === 0) newModes = ['mixed'];
+                    } else {
+                      newModes = selectedModes.filter((mode) => mode !== 'mixed');
+                      newModes.push('writing');
+                    }
+                    setSaveState((prev) => ({ ...prev, selectedModes: newModes }));
+                  }}
+                >
+                  Yazma
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="section">
             <h3 className="section-title">SEVİYE FİLTRESİ</h3>
             <div className="mode-buttons">
-              {['all', 'N5', 'N4', 'N3', 'N2', 'N1'].map(level => (
-                <button 
+              {['all', ...JLPT_LEVELS].map((level) => (
+                <button
                   key={level}
                   className={`mode-btn ${selectedLevel === level ? 'active' : ''}`}
-                  onClick={() => {
-                    setSaveState(prev => ({ ...prev, selectedLevel: level }));
-                    // Filtre değiştiğinde quiz oturumunu sıfırla
-                    setScreen('home');
-                    setCurrentQuiz([]);
-                    setQuizIndex(0);
-                  }}
+                  onClick={() => handleLevelChange(level)}
                 >
                   {level === 'all' ? 'Tümü' : level}
                 </button>
@@ -824,278 +1085,160 @@ function App() {
           </div>
 
           <div className="section">
-            <button 
+            <button
               className={`timer-toggle-btn ${timerEnabled ? 'active' : ''}`}
-              onClick={() => {
-                setSaveState(prev => ({ ...prev, timerEnabled: !prev.timerEnabled }));
-              }}
+              onClick={() => setSaveState((prev) => ({ ...prev, timerEnabled: !prev.timerEnabled }))}
             >
               {timerEnabled ? '⏱️ Süre Sınırı: Açık' : '⏱️ Süre Sınırı: Kapalı'}
             </button>
           </div>
 
-          {/* Review Mode Button */}
+          {selectedCategory === 'grammar' && (
+            <div className="section">
+              <div className="grammar-info-card">
+                <strong>Lazy load aktif.</strong> Dilbilgisi verisi sadece bu kategoriye geçtiğinizde ve seçtiğiniz seviyeye göre yüklenir.
+                {grammarLoadError && (
+                  <div className="grammar-error">
+                    {grammarLoadError}
+                    <button className="retry-btn" onClick={reloadGrammarData}>
+                      Tekrar dene
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="section">
-            <button 
-              className="review-mode-btn"
-              onClick={() => startReviewMode()}
-            >
-              🎯 Hata Yaptığım Kelimeleri Tekrarla
+            <button className="review-mode-btn" onClick={startReviewMode}>
+              🎯 Hata Yaptıklarımı Tekrarla
               <span className="review-count">
-                ({getReviewWords().length} kelime)
+                ({reviewWords.length} {reviewItemLabel})
               </span>
             </button>
           </div>
 
-          {/* Rastgele 50 Button */}
           <div className="section">
-            <button 
-              className="random-50-btn"
-              onClick={() => startRandom50Quiz()}
-            >
+            <button className="random-50-btn" onClick={startRandomQuiz}>
               🎲 Rastgele 50
               <span className="random-count">
-                ({Math.min(50, getAllFilteredWords().length)} kelime)
+                ({Math.min(50, randomPool.length)} {reviewItemLabel})
               </span>
             </button>
           </div>
 
-          {/* Özel Gruplar Bölümü */}
-          <div className="section">
-            <div className="section-header">
-              <h3 className="section-title">ÖZEL GRUPLAR</h3>
-              <button 
-                className="create-group-btn" 
-                onClick={() => setIsCreateGroupModalOpen(true)}
-              >
-                ➕ Grup Oluştur
-              </button>
-            </div>
-            
-            {saveState.customGroups && saveState.customGroups.length > 0 ? (
-              <div className="blocks-grid">
-                {saveState.customGroups.map((group, index) => {
-                  // Grup için ilerleme hesapla
-                  let groupCompleted = 0;
-                  let groupTotal = 0;
-                  group.words.forEach(word => {
-                    groupTotal++;
-                    const key = `${word.kanji}-${word.word}`;
-                    if (progress[key]?.correct > 0) {
-                      groupCompleted++;
-                    }
-                  });
-                  const groupPercent = groupTotal > 0 ? Math.round((groupCompleted / groupTotal) * 100) : 0;
-                  
-                  return (
-                    <div 
-                      key={group.id} 
-                      className="block-card custom-group"
-                      onClick={() => startCustomGroupQuiz(group)}
-                    >
-                      <div className="block-header">
-                        <h4 className="block-title">{group.name}</h4>
-                        <button 
-                          className="delete-group-btn"
-                          onClick={(e) => deleteCustomGroup(group.id, e)}
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                      <div className="custom-group-kanjis">
-                        {group.kanjis.map((k, i) => (
-                          <span key={i} className="mini-kanji small">{k.kanji}</span>
-                        ))}
-                      </div>
-                      <div className="block-progress">
-                        {groupCompleted}/{groupTotal} kelime • %{groupPercent}
-                      </div>
-                    </div>
-                  );
-                })}
+          {selectedCategory === 'vocab' && (
+            <div className="section">
+              <div className="section-header">
+                <h3 className="section-title">ÖZEL GRUPLAR</h3>
+                <button
+                  className="create-group-btn"
+                  onClick={() => setIsCreateGroupModalOpen(true)}
+                >
+                  ➕ Grup Oluştur
+                </button>
               </div>
-            ) : (
-              <p style={{ color: '#888', textAlign: 'center', padding: '20px' }}>Henüz özel grup oluşturmadınız!</p>
-            )}
-          </div>
+
+              {saveState.customGroups && saveState.customGroups.length > 0 ? (
+                <div className="blocks-grid">
+                  {saveState.customGroups.map((group) => {
+                    const groupProgress = getSectionProgress({ words: filterVocabulary(group.words || []) });
+                    return (
+                      <div
+                        key={group.id}
+                        className="block-card custom-group"
+                        onClick={() => startCustomGroupQuiz(group)}
+                      >
+                        <div className="block-header">
+                          <h4 className="block-title">{group.name}</h4>
+                          <button
+                            className="delete-group-btn"
+                            onClick={(event) => deleteCustomGroup(group.id, event)}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                        <div className="custom-group-kanjis">
+                          {group.kanjis.map((kanji) => (
+                            <span key={`${group.id}-${kanji.kanji}`} className="mini-kanji small">
+                              {kanji.kanji}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="block-progress">
+                          {groupProgress.completed}/{groupProgress.total} kelime • %{groupProgress.percentage}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p style={{ color: '#888', textAlign: 'center', padding: '20px' }}>
+                  Henüz özel grup oluşturmadınız!
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="section">
             <div className="section-header">
-              <h3 className="section-title">BÖLÜMLER</h3>
+              <h3 className="section-title">
+                {selectedCategory === 'grammar' ? 'PRACTICE SETLERİ' : 'BÖLÜMLER'}
+              </h3>
               <div className="header-actions">
                 <div className="progress-summary">
-                  {totalStats.completed}/{totalStats.total} kelime tamamlandı
+                  {totalStats.completed}/{totalStats.total} {reviewItemLabel} tamamlandı
                 </div>
                 <button className="clear-btn" onClick={clearAllData}>
                   🗑️ Sıfırla
                 </button>
               </div>
             </div>
-            
+
+            {selectedCategory === 'grammar' && grammarLoading && grammarSections.length === 0 && (
+              <div className="empty-state-card">Dilbilgisi verisi yükleniyor...</div>
+            )}
+
+            {selectedCategory === 'grammar' && !grammarLoading && grammarSections.length === 0 && !grammarLoadError && (
+              <div className="empty-state-card">Bu seviyede gösterilecek soru bulunamadı.</div>
+            )}
+
             {searchQuery ? (
-              // Arama varsa tüm sonuçları göster
               <div className="blocks-grid">
-                {filteredSections.map((section, sectionIndex) => {
-                  const originalIndex = sections.indexOf(section);
-                  const sectionProgress = getSectionProgress(section);
-                  return (
-                    <div 
-                      key={sectionIndex} 
-                      className={`block-card ${section.type} ${section.type === 'kanji' && completedKanjis.has(section.kanji.kanji) ? 'completed' : ''}`}
-                      onClick={() => startQuiz(section, originalIndex)}
-                    >
-                      <div className="block-header">
-                        <h4 className="block-title">{section.title}</h4>
-                        <span className="block-status">
-                          {section.type === 'mini-boss' && '🔥 Mini Boss'}
-                          {section.type === 'big-boss' && '👹 Büyük Boss'}
-                          {section.type === 'kanji' && completedKanjis.has(section.kanji.kanji) && '✅'}
-                          {section.type === 'kanji' && !completedKanjis.has(section.kanji.kanji) && section.kanji.kanji}
-                        </span>
-                      </div>
-                      {section.subtitle && (
-                        <div className="block-subtitle">{section.subtitle}</div>
-                      )}
-                      
-                      {section.type === 'kanji' ? (
-                        <>
-                          <div className="block-kanji single">
-                            <span 
-                              className="mini-kanji large"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                goToKanjiDetail(section.kanji);
-                              }}
-                            >
-                              {section.kanji.kanji}
-                            </span>
-                          </div>
-                          <div className="vocab-preview">
-                            {section.words.slice(0, 2).map((w, i) => (
-                              <div key={i} className="vocab-preview-item">
-                                {w.word}
-                              </div>
-                            ))}
-                            {section.words.length > 2 && (
-                              <div className="vocab-preview-more">+{section.words.length - 2} daha</div>
-                            )}
-                          </div>
-                        </>
-                      ) : (
-                        <div className="boss-kanji-list">
-                          {section.kanjiList.map((k, i) => (
-                            <span 
-                              key={i} 
-                              className="mini-kanji"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                goToKanjiDetail(k);
-                              }}
-                            >
-                              {k.kanji}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      
-                      <div className="block-progress">
-                        {sectionProgress.completed}/{sectionProgress.total} kelime • %{sectionProgress.percentage}
-                      </div>
-                    </div>
-                  );
-                })}
+                {filteredSections.map((section) =>
+                  renderSectionCard(
+                    section,
+                    section.category === 'vocab' ? vocabSections.indexOf(section) : null
+                  )
+                )}
               </div>
             ) : (
-              // Arama yoksa gruplandırılmış görünüm
               <div className="groups-container">
-                {groups.map((group, groupIndex) => {
-                  const isExpanded = expandedGroups.includes(group.letter);
+                {activeGroups.map((group, index) => {
+                  const hasExplicitOpen = expandedGroups.includes(group.id);
+                  const shouldAutoExpand =
+                    index === 0 &&
+                    !expandedGroups.some((value) =>
+                      selectedCategory === 'grammar' ? value.startsWith('grammar') : value.length === 1
+                    );
+                  const isExpanded = hasExplicitOpen || shouldAutoExpand;
+
                   return (
-                    <div key={groupIndex} className="group-card">
-                      <button 
-                        className="group-header"
-                        onClick={() => toggleGroup(group.letter)}
-                      >
-                        <span className="group-title">
-                          Kanji {group.startKanji} - {group.endKanji}
-                        </span>
-                        <span className={`group-arrow ${isExpanded ? 'expanded' : ''}`}>
-                          ▼
-                        </span>
+                    <div key={group.id} className="group-card">
+                      <button className="group-header" onClick={() => toggleGroup(group.id)}>
+                        <span className="group-title">{group.title}</span>
+                        <span className={`group-arrow ${isExpanded ? 'expanded' : ''}`}>▼</span>
                       </button>
-                      
+
                       {isExpanded && (
                         <div className="group-content">
                           <div className="blocks-grid">
-                            {group.sections.map((section, sectionIndex) => {
-                              const originalIndex = sections.indexOf(section);
-                              const sectionProgress = getSectionProgress(section);
-                              return (
-                                <div 
-                                  key={sectionIndex} 
-                                  className={`block-card ${section.type} ${section.type === 'kanji' && completedKanjis.has(section.kanji.kanji) ? 'completed' : ''}`}
-                                  onClick={() => startQuiz(section, originalIndex)}
-                                >
-                                  <div className="block-header">
-                                    <h4 className="block-title">{section.title}</h4>
-                                    <span className="block-status">
-                                      {section.type === 'mini-boss' && '🔥 Mini Boss'}
-                                      {section.type === 'big-boss' && '👹 Büyük Boss'}
-                                      {section.type === 'kanji' && completedKanjis.has(section.kanji.kanji) && '✅'}
-                                      {section.type === 'kanji' && !completedKanjis.has(section.kanji.kanji) && section.kanji.kanji}
-                                    </span>
-                                  </div>
-                                  {section.subtitle && (
-                                    <div className="block-subtitle">{section.subtitle}</div>
-                                  )}
-                                  
-                                  {section.type === 'kanji' ? (
-                                    <>
-                                      <div className="block-kanji single">
-                                        <span 
-                                          className="mini-kanji large"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            goToKanjiDetail(section.kanji);
-                                          }}
-                                        >
-                                          {section.kanji.kanji}
-                                        </span>
-                                      </div>
-                                      <div className="vocab-preview">
-                                        {section.words.slice(0, 2).map((w, i) => (
-                                          <div key={i} className="vocab-preview-item">
-                                            {w.word}
-                                          </div>
-                                        ))}
-                                        {section.words.length > 2 && (
-                                          <div className="vocab-preview-more">+{section.words.length - 2} daha</div>
-                                        )}
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <div className="boss-kanji-list">
-                                      {section.kanjiList.map((k, i) => (
-                                        <span 
-                                          key={i} 
-                                          className="mini-kanji"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            goToKanjiDetail(k);
-                                          }}
-                                        >
-                                          {k.kanji}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  
-                                  <div className="block-progress">
-                                    {sectionProgress.completed}/{sectionProgress.total} kelime • %{sectionProgress.percentage}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                            {group.sections.map((section) =>
+                              renderSectionCard(
+                                section,
+                                section.category === 'vocab' ? vocabSections.indexOf(section) : null
+                              )
+                            )}
                           </div>
                         </div>
                       )}
@@ -1110,10 +1253,10 @@ function App() {
 
       {screen === 'quiz' && currentWord && (
         <div className="quiz-screen">
-          <button className="back-btn" onClick={() => setScreen('home')}>
+          <button className="back-btn" onClick={returnHome}>
             ← Geri
           </button>
-          
+
           <div className="quiz-progress">
             {quizIndex + 1}/{currentQuiz.length}
             {!feedback && timerEnabled && (
@@ -1124,18 +1267,30 @@ function App() {
           </div>
 
           <div className="question-card">
-            <div className="kanji-display">{currentWord.kanji}</div>
-            <div className="word-display">{currentWord.word}</div>
-            
+            {currentWord.type === 'grammar' ? (
+              <>
+                <div className="grammar-meta">
+                  <span className="grammar-badge">{currentWord.level}</span>
+                  <span className="grammar-badge secondary">{currentWord.practiceSet}</span>
+                </div>
+                <div className="grammar-question">{currentWord.question}</div>
+              </>
+            ) : (
+              <>
+                <div className="kanji-display">{currentWord.kanji}</div>
+                <div className="word-display">{currentWord.word}</div>
+              </>
+            )}
+
             {!feedback ? (
               <>
                 {quizMode === 'reading' && (
                   <div className="mode-section">
                     <h3>Okunuşunu seçin:</h3>
                     <div className="options-grid">
-                      {options.map((opt, i) => (
+                      {options.map((opt) => (
                         <button
-                          key={i}
+                          key={opt}
                           className="option-btn"
                           onClick={() => handleAnswer(opt)}
                           disabled={feedback}
@@ -1147,15 +1302,13 @@ function App() {
                   </div>
                 )}
 
-
-
                 {quizMode === 'turkish' && (
                   <div className="mode-section">
                     <h3>Türkçe anlamını seçin:</h3>
                     <div className="options-grid">
-                      {options.map((opt, i) => (
+                      {options.map((opt) => (
                         <button
-                          key={i}
+                          key={opt}
                           className="option-btn"
                           onClick={() => handleAnswer(opt)}
                           disabled={feedback}
@@ -1173,8 +1326,8 @@ function App() {
                     <input
                       type="text"
                       value={inputValue}
-                      onChange={(e) => setInputValue(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && !feedback && handleAnswer()}
+                      onChange={(event) => setInputValue(event.target.value)}
+                      onKeyDown={(event) => event.key === 'Enter' && !feedback && handleAnswer()}
                       className="reading-input"
                       disabled={feedback}
                       placeholder="Örnek: genki"
@@ -1185,17 +1338,48 @@ function App() {
                     </button>
                   </div>
                 )}
+
+                {quizMode === 'grammar' && (
+                  <div className="mode-section">
+                    <h3>Boşluğu doğru seçenekle tamamlayın:</h3>
+                    <div className="options-grid">
+                      {options.map((opt) => (
+                        <button
+                          key={opt}
+                          className="option-btn"
+                          onClick={() => handleAnswer(opt)}
+                          disabled={feedback}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <div className="feedback-details-centered">
                 <div className={`feedback ${feedback}`}>
                   {feedback === 'correct' ? '✓ Doğru!' : '✗ Yanlış!'}
                 </div>
-                <div className="word-details">
-                  <div className="detail-word">{currentWord.word}</div>
-                  <div className="detail-reading">Okunuş: {currentWord.reading}</div>
-                  <div className="detail-meaning">Türkçe: {currentWord.turkish}</div>
-                </div>
+
+                {currentWord.type === 'grammar' ? (
+                  <div className="word-details grammar-word-details">
+                    <div className="detail-word">{currentWord.correctAnswer}</div>
+                    <div className="detail-reading grammar-full-sentence">
+                      {currentWord.questionWithAnswer}
+                    </div>
+                    {selectedAnswer && feedback === 'incorrect' && (
+                      <div className="detail-meaning">Seçtiğin: {selectedAnswer}</div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="word-details">
+                    <div className="detail-word">{currentWord.word}</div>
+                    <div className="detail-reading">Okunuş: {currentWord.reading}</div>
+                    <div className="detail-meaning">Türkçe: {currentWord.turkish}</div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1204,7 +1388,7 @@ function App() {
 
       {screen === 'kanjiDetail' && selectedKanji && (
         <div className="detail-screen">
-          <button className="back-btn" onClick={() => setScreen('home')}>
+          <button className="back-btn" onClick={returnHome}>
             ← Geri
           </button>
 
@@ -1218,27 +1402,29 @@ function App() {
             {selectedKanji.vocabulary && (
               <div className="vocab-list">
                 <h3>Kelimeler:</h3>
-                {selectedKanji.vocabulary.map((v, i) => {
-                  const word = { ...v, kanji: selectedKanji.kanji };
-                  const key = `${selectedKanji.kanji}-${v.word}`;
+                {selectedKanji.vocabulary.map((vocab) => {
+                  const word = { ...vocab, kanji: selectedKanji.kanji };
+                  const key = `${selectedKanji.kanji}-${vocab.word}`;
                   const wordProgress = progress[key];
                   const isCompleted = completedWords.has(key);
+
                   return (
-                    <div key={i} className={`vocab-item ${isCompleted ? 'completed' : ''}`}>
+                    <div key={key} className={`vocab-item ${isCompleted ? 'completed' : ''}`}>
                       <div>
-                        <div className="vocab-word">{v.word}</div>
-                        <div className="vocab-reading">{v.reading}</div>
-                        <div className="vocab-meaning">{v.turkish}</div>
+                        <div className="vocab-word">{vocab.word}</div>
+                        <div className="vocab-reading">{vocab.reading}</div>
+                        <div className="vocab-meaning">{vocab.turkish}</div>
                         {wordProgress && (
                           <div className="vocab-progress">
                             {wordProgress.correct}/{wordProgress.attempts} doğru
                           </div>
                         )}
                       </div>
+
                       {!isCompleted && (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
                             handleWordComplete(word);
                           }}
                           style={{
@@ -1249,12 +1435,13 @@ function App() {
                             color: 'white',
                             cursor: 'pointer',
                             fontWeight: 'bold',
-                            marginTop: '8px',
+                            marginTop: '8px'
                           }}
                         >
                           ✅ Tamamla
                         </button>
                       )}
+
                       {isCompleted && (
                         <div style={{ color: '#4caf50', fontWeight: 'bold', marginTop: '8px' }}>
                           ✅ Tamamlandı
@@ -1266,23 +1453,21 @@ function App() {
               </div>
             )}
 
-            <button 
+            <button
               className="practice-btn"
               onClick={() => {
-                const words = selectedKanji.vocabulary 
-                  ? selectedKanji.vocabulary.map(v => ({ ...v, kanji: selectedKanji.kanji }))
-                  : [];
-                setCurrentQuiz(words);
-                setQuizIndex(0);
-                startQuestion(words[0]);
-                setScreen('quiz');
+                const words = (selectedKanji.vocabulary || []).map((vocab) => ({
+                  ...vocab,
+                  kanji: selectedKanji.kanji
+                }));
+                startQuizSession(words);
               }}
             >
               Bu kanjiyle pratik yap
             </button>
 
             {!completedKanjis.has(selectedKanji.kanji) && (
-              <button 
+              <button
                 className="practice-btn"
                 onClick={handleKanjiComplete}
                 style={{ backgroundColor: 'var(--accent-color)' }}
@@ -1290,7 +1475,7 @@ function App() {
                 ✅ Bu kanjiyi tamamladım
               </button>
             )}
-            
+
             {completedKanjis.has(selectedKanji.kanji) && (
               <div style={{ color: 'var(--accent-color)', marginTop: '1rem', fontWeight: 'bold' }}>
                 ✅ Bu kanji tamamlandı!
@@ -1300,98 +1485,100 @@ function App() {
         </div>
       )}
 
-      {/* Özel Grup Oluşturma Modal'ı */}
       {isCreateGroupModalOpen && (
         <div className="modal-overlay" onClick={() => setIsCreateGroupModalOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <h2>Yeni Grup Oluştur</h2>
-              <button 
+              <button
                 className="close-modal-btn"
                 onClick={() => setIsCreateGroupModalOpen(false)}
               >
                 ✕
               </button>
             </div>
-            
+
             <div className="modal-body">
               <div className="form-group">
                 <label>Grup Adı:</label>
                 <input
                   type="text"
                   value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
+                  onChange={(event) => setNewGroupName(event.target.value)}
                   placeholder="Örn: Kitap Bölüm 1"
                   className="form-input"
                 />
               </div>
-              
+
               <div className="form-group">
                 <label>
                   Kanji Seçin ({selectedKanjisForGroup.length}/8):
-                  {selectedKanjisForGroup.length < 6 && <span style={{ color: '#f87171', marginLeft: '8px' }}>(En az 6 kanji seçin!)</span>}
+                  {selectedKanjisForGroup.length < 6 && (
+                    <span style={{ color: '#f87171', marginLeft: '8px' }}>
+                      (En az 6 kanji seçin!)
+                    </span>
+                  )}
                 </label>
                 <input
                   type="text"
                   value={groupSearchQuery}
-                  onChange={(e) => setGroupSearchQuery(e.target.value)}
+                  onChange={(event) => setGroupSearchQuery(event.target.value)}
                   placeholder="Kanji ara..."
                   className="form-input"
                 />
               </div>
-              
+
               <div className="kanji-select-grid">
-                {kanjiData.filter(k => {
-                  if (!groupSearchQuery) return true;
-                  const q = groupSearchQuery.toLowerCase();
-                  return (
-                    k.kanji.includes(groupSearchQuery) ||
-                    k.vocabulary?.some(v => 
-                      v.word.toLowerCase().includes(q) ||
-                      v.reading.toLowerCase().includes(q) ||
-                      (v.turkish && v.turkish.toLowerCase().includes(q))
-                    )
-                  );
-                }).map(kanji => {
-                  const isSelected = selectedKanjisForGroup.some(k => k.kanji === kanji.kanji);
-                  return (
-                    <div
-                      key={kanji.kanji}
-                      className={`kanji-select-item ${isSelected ? 'selected' : ''}`}
-                      onClick={() => toggleKanjiForGroup(kanji)}
-                    >
-                      <span className="kanji-char">{kanji.kanji}</span>
-                      {isSelected && <span className="checkmark">✓</span>}
-                    </div>
-                  );
-                })}
+                {kanjiData
+                  .filter((kanji) => {
+                    if (!groupSearchQuery) return true;
+                    const query = groupSearchQuery.toLowerCase();
+                    return (
+                      kanji.kanji.includes(groupSearchQuery) ||
+                      (kanji.vocabulary || []).some((vocab) =>
+                        vocab.word.toLowerCase().includes(query) ||
+                        String(vocab.reading || '').toLowerCase().includes(query) ||
+                        String(vocab.turkish || '').toLowerCase().includes(query)
+                      )
+                    );
+                  })
+                  .map((kanji) => {
+                    const isSelected = selectedKanjisForGroup.some((item) => item.kanji === kanji.kanji);
+                    return (
+                      <div
+                        key={kanji.kanji}
+                        className={`kanji-select-item ${isSelected ? 'selected' : ''}`}
+                        onClick={() => toggleKanjiForGroup(kanji)}
+                      >
+                        <span className="kanji-char">{kanji.kanji}</span>
+                        {isSelected && <span className="checkmark">✓</span>}
+                      </div>
+                    );
+                  })}
               </div>
-              
+
               {selectedKanjisForGroup.length > 0 && (
                 <div className="selected-kanjis-preview">
                   <h4>Seçilen Kanji:</h4>
                   <div className="selected-kanjis-list">
-                    {selectedKanjisForGroup.map(k => (
-                      <span key={k.kanji} className="selected-kanji-tag">
-                        {k.kanji}
+                    {selectedKanjisForGroup.map((kanji) => (
+                      <span key={kanji.kanji} className="selected-kanji-tag">
+                        {kanji.kanji}
                       </span>
                     ))}
                   </div>
                 </div>
               )}
             </div>
-            
+
             <div className="modal-footer">
-              <button 
+              <button
                 className="cancel-btn"
                 onClick={() => setIsCreateGroupModalOpen(false)}
               >
                 İptal
               </button>
-              <button 
-                className="create-btn"
-                onClick={createCustomGroup}
-              >
+              <button className="create-btn" onClick={createCustomGroup}>
                 Grup Oluştur
               </button>
             </div>

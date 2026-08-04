@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
+import Papa from 'papaparse';
 import { toKana } from 'wanakana';
 import kanjiData from '../kanji_game_data.json';
 import './App.css';
 
 const JLPT_LEVELS = ['N5', 'N4', 'N3', 'N2', 'N1'];
 const LEVEL_SORT = { N5: 0, N4: 1, N3: 2, N2: 3, N1: 4 };
+const FREQUENCY_RANGES = [
+  { id: '1-2000', label: '1-2000', file: '1_-_2000.csv' },
+  { id: '2001-4000', label: '2001-4000', file: '2001_-_4000.csv' },
+  { id: '4001-6000', label: '4001-6000', file: '4001_-_6000.csv' },
+  { id: '6001-8000', label: '6001-8000', file: '6001_-_8000.csv' },
+  { id: '8001-10000', label: '8001-10000', file: '8001_-_10000.csv' }
+];
 
 const defaultSaveState = {
   selectedCategory: 'vocab',
@@ -22,6 +30,8 @@ const defaultSaveState = {
 };
 
 const buildGrammarUrl = (level) => `${import.meta.env.BASE_URL}data/jlpt-grammar/${level}.json`;
+const buildFrequencyUrl = (fileName) => `${import.meta.env.BASE_URL}data/frequency/${fileName}`;
+const getFrequencyRangeStart = (rangeId) => Number(String(rangeId).split('-')[0] || 1);
 
 const getQuizItemKey = (item) => {
   if (!item) return '';
@@ -42,6 +52,61 @@ const normalizeGrammarQuestion = (item) => {
   };
 };
 
+const parseFrequencyCsv = (csvText, rangeId) => {
+  const parsed = Papa.parse(csvText, {
+    header: false,
+    skipEmptyLines: true
+  });
+
+  const rows = parsed.data || [];
+  const rangeStart = getFrequencyRangeStart(rangeId);
+  const firstRow = rows[0] || [];
+  const hasHeader = Array.isArray(firstRow) && String(firstRow[0] || '').toLowerCase() === 'rank';
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+
+  return dataRows
+    .map((row, index) => {
+      if (!Array.isArray(row)) return null;
+
+      if (row.length >= 4) {
+        const rank = Number(row[0]);
+        const reading = String(row[2] || '').trim();
+        const word = String(row[1] || '').trim() || reading;
+        const meaning = String(row[3] || '').trim();
+
+        if (!rank || !word || !reading || !meaning) return null;
+
+        return {
+          id: `frequency-${rank}`,
+          rank,
+          word,
+          reading,
+          meaning
+        };
+      }
+
+      if (row.length >= 3) {
+        const reading = String(row[1] || '').trim();
+        const word = String(row[0] || '').trim() || reading;
+        const meaning = String(row[2] || '').trim();
+        const rank = rangeStart + index;
+
+        if (!word || !reading || !meaning) return null;
+
+        return {
+          id: `frequency-${rank}`,
+          rank,
+          word,
+          reading,
+          meaning
+        };
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+};
+
 function App() {
   const [screen, setScreen] = useState('home');
   const [currentQuiz, setCurrentQuiz] = useState([]);
@@ -60,6 +125,16 @@ function App() {
   const [grammarDataByLevel, setGrammarDataByLevel] = useState({});
   const [grammarLoading, setGrammarLoading] = useState(false);
   const [grammarLoadError, setGrammarLoadError] = useState('');
+  const [frequencyDataByRange, setFrequencyDataByRange] = useState({});
+  const [frequencyLoading, setFrequencyLoading] = useState(false);
+  const [frequencyLoadError, setFrequencyLoadError] = useState('');
+  const [selectedFrequencyRange, setSelectedFrequencyRange] = useState(FREQUENCY_RANGES[0].id);
+  const [frequencyOrder, setFrequencyOrder] = useState('random');
+  const [frequencyDeck, setFrequencyDeck] = useState([]);
+  const [frequencyIndex, setFrequencyIndex] = useState(0);
+  const [isFrequencyFlipped, setIsFrequencyFlipped] = useState(false);
+  const [frequencyKnown, setFrequencyKnown] = useState({});
+  const [frequencySessionStarted, setFrequencySessionStarted] = useState(false);
 
   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
@@ -227,6 +302,55 @@ function App() {
     };
   }, [selectedCategory, selectedLevel, grammarDataByLevel]);
 
+    useEffect(() => {
+      if (selectedCategory !== 'frequency') return undefined;
+      if (frequencyDataByRange[selectedFrequencyRange]) {
+        setFrequencyLoadError('');
+        return undefined;
+      }
+
+      const range = FREQUENCY_RANGES.find((item) => item.id === selectedFrequencyRange);
+      if (!range) return undefined;
+
+      let cancelled = false;
+
+      const loadFrequencyRange = async () => {
+        setFrequencyLoading(true);
+        setFrequencyLoadError('');
+
+        try {
+          const response = await fetch(buildFrequencyUrl(range.file));
+          if (!response.ok) {
+            throw new Error(`${range.label} verisi yüklenemedi`);
+          }
+
+          const csvText = await response.text();
+          const parsedCards = parseFrequencyCsv(csvText, range.id);
+
+          if (cancelled) return;
+
+          setFrequencyDataByRange((prev) => ({
+            ...prev,
+            [range.id]: parsedCards
+          }));
+        } catch (error) {
+          if (!cancelled) {
+            setFrequencyLoadError(error instanceof Error ? error.message : 'Frekans verisi yüklenemedi.');
+          }
+        } finally {
+          if (!cancelled) {
+            setFrequencyLoading(false);
+          }
+        }
+      };
+
+      loadFrequencyRange();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [selectedCategory, selectedFrequencyRange, frequencyDataByRange]);
+
   useEffect(() => {
     let interval;
     if (timerActive && timeLeft > 0) {
@@ -260,6 +384,27 @@ function App() {
     }
     return grammarDataByLevel[selectedLevel] || [];
   }, [grammarDataByLevel, selectedLevel]);
+
+    const selectedFrequencyCards = useMemo(
+      () => frequencyDataByRange[selectedFrequencyRange] || [],
+      [frequencyDataByRange, selectedFrequencyRange]
+    );
+
+    const frequencyStats = useMemo(() => {
+      const total = frequencyDeck.length;
+      let known = 0;
+      let unknown = 0;
+
+      frequencyDeck.forEach((card) => {
+        const status = frequencyKnown[card.id];
+        if (status === 'known') known += 1;
+        if (status === 'unknown') unknown += 1;
+      });
+
+      return { total, known, unknown };
+    }, [frequencyDeck, frequencyKnown]);
+
+    const currentFrequencyCard = frequencyDeck[frequencyIndex] || null;
 
   const createVocabSections = () => {
     const sections = [];
@@ -531,6 +676,9 @@ function App() {
   }, [activeSections, progress]);
 
   const continueSection = useMemo(() => {
+      if (selectedCategory === 'frequency') {
+        return null;
+      }
     if (selectedCategory === 'grammar') {
       return grammarSections.find((section) => section.id === lastGrammarSectionId) || null;
     }
@@ -681,6 +829,14 @@ function App() {
     });
   };
 
+    const reloadFrequencyData = () => {
+      setFrequencyDataByRange((prev) => {
+        const next = { ...prev };
+        delete next[selectedFrequencyRange];
+        return next;
+      });
+    };
+
   const handleCategoryChange = (category) => {
     setTimerActive(false);
     setSearchQuery('');
@@ -688,6 +844,8 @@ function App() {
     setQuizIndex(0);
     setFeedback(null);
     setSaveState((prev) => ({ ...prev, selectedCategory: category }));
+      setIsFrequencyFlipped(false);
+      setFrequencySessionStarted(false);
     setScreen('home');
   };
 
@@ -839,6 +997,40 @@ function App() {
     window.location.reload();
   };
 
+    const startFrequencySession = () => {
+      if (selectedFrequencyCards.length === 0) {
+        alert('Bu aralıkta gösterilecek kart bulunamadı.');
+        return;
+      }
+
+      const deck = frequencyOrder === 'random'
+        ? shuffleArray(selectedFrequencyCards)
+        : [...selectedFrequencyCards].sort((a, b) => a.rank - b.rank);
+
+      setFrequencyDeck(deck);
+      setFrequencyIndex(0);
+      setIsFrequencyFlipped(false);
+      setFrequencySessionStarted(true);
+      setScreen('frequency');
+    };
+
+    const handleFrequencyAssessment = (status) => {
+      if (!currentFrequencyCard) return;
+
+      setFrequencyKnown((prev) => ({
+        ...prev,
+        [currentFrequencyCard.id]: status
+      }));
+
+      if (frequencyIndex < frequencyDeck.length - 1) {
+        setFrequencyIndex((prev) => prev + 1);
+        setIsFrequencyFlipped(false);
+        return;
+      }
+
+      returnHome();
+    };
+
   const renderSectionCard = (section, sectionIndex = null) => {
     const sectionProgress = getSectionProgress(section);
 
@@ -934,35 +1126,10 @@ function App() {
     );
   };
 
-  const headerInfoText = selectedCategory === 'grammar'
-    ? `${grammarQuestions.length} soru • ${grammarSections.length} set${grammarLoading ? ' • yükleniyor...' : ''}`
-    : `${kanjiData.length} kanji • ${vocabGroups.length} grup`;
-
-  const categoryTitle = selectedCategory === 'grammar' ? 'Dilbilgisi Pratiği' : 'Kanji Quiz';
-  const categorySubtitle = selectedCategory === 'grammar'
-    ? 'JLPT cümle tamamlama setleri'
-    : 'Vault notlarından üretildi';
-
   return (
     <div className="app">
       {screen === 'home' && (
         <div className="home-screen">
-          <header className="header">
-            <h1 className="title">{selectedCategory === 'grammar' ? '文法クイズ' : '漢字クイズ'}</h1>
-            <p className="subtitle">Vault Quiz</p>
-            <div className="header-info">
-              <span>{headerInfoText}</span>
-            </div>
-          </header>
-
-          <div className="divider" />
-
-          <div className="kanji-display-main">
-            <div className="big-kanji">{selectedCategory === 'grammar' ? '文' : '漢'}</div>
-            <h2 className="quiz-title">{categoryTitle}</h2>
-            <p className="quiz-subtitle">{categorySubtitle}</p>
-          </div>
-
           {continueSection && (
             <div className="continue-section">
               <button className="continue-btn" onClick={() => startQuiz(continueSection, lastSectionIndex)}>
@@ -986,22 +1153,30 @@ function App() {
               >
                 Cümle Tamamlama
               </button>
+                <button
+                  className={`mode-btn ${selectedCategory === 'frequency' ? 'active' : ''}`}
+                  onClick={() => handleCategoryChange('frequency')}
+                >
+                  Frekans Kartları
+                </button>
             </div>
           </div>
 
-          <div className="search-section">
-            <input
-              type="text"
-              className="search-input"
-              placeholder={
-                selectedCategory === 'grammar'
-                  ? '🔍 Set, cümle veya cevap ara...'
-                  : '🔍 Kanji, kelime, okunuş, anlam ara...'
-              }
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-          </div>
+            {selectedCategory !== 'frequency' && (
+              <div className="search-section">
+                <input
+                  type="text"
+                  className="search-input"
+                  placeholder={
+                    selectedCategory === 'grammar'
+                      ? '🔍 Set, cümle veya cevap ara...'
+                      : '🔍 Kanji, kelime, okunuş, anlam ara...'
+                  }
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </div>
+            )}
 
           {selectedCategory === 'vocab' && (
             <div className="section">
@@ -1069,29 +1244,33 @@ function App() {
             </div>
           )}
 
-          <div className="section">
-            <h3 className="section-title">SEVİYE FİLTRESİ</h3>
-            <div className="mode-buttons">
-              {['all', ...JLPT_LEVELS].map((level) => (
-                <button
-                  key={level}
-                  className={`mode-btn ${selectedLevel === level ? 'active' : ''}`}
-                  onClick={() => handleLevelChange(level)}
-                >
-                  {level === 'all' ? 'Tümü' : level}
-                </button>
-              ))}
-            </div>
-          </div>
+            {selectedCategory !== 'frequency' && (
+              <div className="section">
+                <h3 className="section-title">SEVİYE FİLTRESİ</h3>
+                <div className="mode-buttons">
+                  {['all', ...JLPT_LEVELS].map((level) => (
+                    <button
+                      key={level}
+                      className={`mode-btn ${selectedLevel === level ? 'active' : ''}`}
+                      onClick={() => handleLevelChange(level)}
+                    >
+                      {level === 'all' ? 'Tümü' : level}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-          <div className="section">
-            <button
-              className={`timer-toggle-btn ${timerEnabled ? 'active' : ''}`}
-              onClick={() => setSaveState((prev) => ({ ...prev, timerEnabled: !prev.timerEnabled }))}
-            >
-              {timerEnabled ? '⏱️ Süre Sınırı: Açık' : '⏱️ Süre Sınırı: Kapalı'}
-            </button>
-          </div>
+            {selectedCategory !== 'frequency' && (
+              <div className="section">
+                <button
+                  className={`timer-toggle-btn ${timerEnabled ? 'active' : ''}`}
+                  onClick={() => setSaveState((prev) => ({ ...prev, timerEnabled: !prev.timerEnabled }))}
+                >
+                  {timerEnabled ? '⏱️ Süre Sınırı: Açık' : '⏱️ Süre Sınırı: Kapalı'}
+                </button>
+              </div>
+            )}
 
           {selectedCategory === 'grammar' && (
             <div className="section">
@@ -1109,23 +1288,102 @@ function App() {
             </div>
           )}
 
-          <div className="section">
-            <button className="review-mode-btn" onClick={startReviewMode}>
-              🎯 Hata Yaptıklarımı Tekrarla
-              <span className="review-count">
-                ({reviewWords.length} {reviewItemLabel})
-              </span>
-            </button>
-          </div>
+            {selectedCategory === 'frequency' && (
+              <>
+                <div className="section">
+                  <div className="grammar-info-card frequency-info-card">
+                    <strong>Lazy load aktif.</strong> Frekans kartları yalnızca seçtiğin aralık açıldığında CSV üzerinden yüklenir.
+                    {frequencyLoadError && (
+                      <div className="grammar-error">
+                        {frequencyLoadError}
+                        <button className="retry-btn" onClick={reloadFrequencyData}>
+                          Tekrar dene
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-          <div className="section">
-            <button className="random-50-btn" onClick={startRandomQuiz}>
-              🎲 Rastgele 50
-              <span className="random-count">
-                ({Math.min(50, randomPool.length)} {reviewItemLabel})
-              </span>
-            </button>
-          </div>
+                <div className="section">
+                  <h3 className="section-title">RANK ARALIĞI</h3>
+                  <div className="frequency-controls">
+                    <select
+                      className="frequency-select"
+                      value={selectedFrequencyRange}
+                      onChange={(event) => setSelectedFrequencyRange(event.target.value)}
+                    >
+                      {FREQUENCY_RANGES.map((range) => (
+                        <option key={range.id} value={range.id}>
+                          {range.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mode-buttons">
+                      <button
+                        className={`mode-btn ${frequencyOrder === 'random' ? 'active' : ''}`}
+                        onClick={() => setFrequencyOrder('random')}
+                      >
+                        Rastgele
+                      </button>
+                      <button
+                        className={`mode-btn ${frequencyOrder === 'ordered' ? 'active' : ''}`}
+                        onClick={() => setFrequencyOrder('ordered')}
+                      >
+                        Rank Sırası
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="section">
+                  <div className="frequency-summary-card">
+                    <div className="frequency-summary-row">
+                      <span>Yüklenen kart</span>
+                      <strong>{selectedFrequencyCards.length}</strong>
+                    </div>
+                    <div className="frequency-summary-row">
+                      <span>Son oturum</span>
+                      <strong>{frequencySessionStarted ? `${frequencyStats.known} biliyordum / ${frequencyStats.unknown} bilmiyordum` : 'Henüz başlamadı'}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="section">
+                  <button
+                    className="random-50-btn"
+                    onClick={startFrequencySession}
+                    disabled={frequencyLoading}
+                  >
+                    🃏 Frekans Kartlarını Başlat
+                    <span className="random-count">
+                      ({selectedFrequencyCards.length} kart)
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+
+            {selectedCategory !== 'frequency' && (
+              <div className="section">
+                <button className="review-mode-btn" onClick={startReviewMode}>
+                  🎯 Hata Yaptıklarımı Tekrarla
+                  <span className="review-count">
+                    ({reviewWords.length} {reviewItemLabel})
+                  </span>
+                </button>
+              </div>
+            )}
+
+            {selectedCategory !== 'frequency' && (
+              <div className="section">
+                <button className="random-50-btn" onClick={startRandomQuiz}>
+                  🎲 Rastgele 50
+                  <span className="random-count">
+                    ({Math.min(50, randomPool.length)} {reviewItemLabel})
+                  </span>
+                </button>
+              </div>
+            )}
 
           {selectedCategory === 'vocab' && (
             <div className="section">
@@ -1180,7 +1438,8 @@ function App() {
             </div>
           )}
 
-          <div className="section">
+            {selectedCategory !== 'frequency' && (
+            <div className="section">
             <div className="section-header">
               <h3 className="section-title">
                 {selectedCategory === 'grammar' ? 'PRACTICE SETLERİ' : 'BÖLÜMLER'}
@@ -1248,8 +1507,71 @@ function App() {
               </div>
             )}
           </div>
+            )}
         </div>
       )}
+
+        {screen === 'frequency' && currentFrequencyCard && (
+          <div className="quiz-screen">
+            <button className="back-btn" onClick={returnHome}>
+              ← Geri
+            </button>
+
+            <div className="quiz-progress">
+              {frequencyIndex + 1}/{frequencyDeck.length}
+            </div>
+
+            <div className="frequency-session-header">
+              <span className="grammar-badge">#{currentFrequencyCard.rank}</span>
+              <span className="grammar-badge secondary">{selectedFrequencyRange}</span>
+              <span className="grammar-badge secondary">{frequencyOrder === 'random' ? 'Rastgele' : 'Sıralı'}</span>
+            </div>
+
+            <button
+              type="button"
+              className={`frequency-card ${isFrequencyFlipped ? 'flipped' : ''}`}
+              onClick={() => setIsFrequencyFlipped((prev) => !prev)}
+            >
+              {isFrequencyFlipped ? (
+                <div className="frequency-card-face frequency-card-back">
+                  <div className="frequency-card-label">Arka Yüz</div>
+                  <div className="frequency-reading">{currentFrequencyCard.reading}</div>
+                  <div className="frequency-meaning">{currentFrequencyCard.meaning}</div>
+                </div>
+              ) : (
+                <div className="frequency-card-face frequency-card-front">
+                  <div className="frequency-card-label">Ön Yüz</div>
+                  <div className="frequency-word">{currentFrequencyCard.word}</div>
+                  <div className="frequency-hint">Kartı çevir</div>
+                </div>
+              )}
+            </button>
+
+            <div className="frequency-actions">
+              <button
+                className="option-btn secondary-action"
+                onClick={() => setIsFrequencyFlipped((prev) => !prev)}
+              >
+                {isFrequencyFlipped ? 'Ön Yüze Dön' : 'Cevabı Göster'}
+              </button>
+            </div>
+
+            <div className="frequency-actions">
+              <button
+                className="option-btn frequency-unknown-btn"
+                onClick={() => handleFrequencyAssessment('unknown')}
+              >
+                Bilmiyordum
+              </button>
+              <button
+                className="option-btn frequency-known-btn"
+                onClick={() => handleFrequencyAssessment('known')}
+              >
+                Biliyordum
+              </button>
+            </div>
+          </div>
+        )}
 
       {screen === 'quiz' && currentWord && (
         <div className="quiz-screen">
